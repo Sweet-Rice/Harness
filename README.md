@@ -19,3 +19,14 @@ Hopefully implementing tools myself will help me understand the plumbing.
 Eventually, I hope to have an expansive MCP server that allows multi-agent control for preventing context drift and hallucinations.
 
 
+# Running
+
+Start the MCP server:
+```bash
+.venv/bin/python -m harness.server
+```
+
+Run the agent (in a separate terminal):
+```bash
+.venv/bin/python -m harness.harness
+```
