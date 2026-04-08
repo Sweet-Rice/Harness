@@ -1,4 +1,5 @@
 import asyncio
+import json
 from fastmcp import Client
 
 from harness.utils.llm import loop
@@ -78,16 +79,32 @@ async def main():
     ctx.new("Default")
 
     client = Client("http://localhost:8000/mcp")
+    approval_queue = asyncio.Queue()
+
+    async def on_event(event_type, content):
+        if event_type == "proposal":
+            proposal = json.loads(content)
+            print(f"\n--- Proposed write: {proposal['path']} ---")
+            print(proposal["diff"])
+            print(f"Command: {proposal['command']}")
+            print("---")
+            # Run input in a thread so we don't block the event loop
+            answer = await asyncio.to_thread(input, "Approve? [y/n]: ")
+            approved = answer.strip().lower() in ("y", "yes")
+            await approval_queue.put(approved)
+        else:
+            print(content)
+
     async with client:
         while True:
-            user_input = input("\nTask: ")
+            user_input = await asyncio.to_thread(input, "\nTask: ")
 
             if user_input.startswith("/"):
                 if handle_command(user_input):
                     continue
 
             messages.append({"role": "user", "content": user_input})
-            await loop(client, messages)
+            await loop(client, messages, on_event=on_event, approval_queue=approval_queue)
             ctx.save(ctx.current, messages)
 
 

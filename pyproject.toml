@@ -10,5 +10,6 @@ dependencies = [
     "fastmcp>=3.2",
     "ollama",
     "websockets",
+    "duckduckgo-search>=5.0",
 ]
 

@@ -8,7 +8,7 @@ from pathlib import Path
 import websockets
 
 from fastmcp import Client
-from harness.utils.llm import loop
+from harness.utils.llm import loop, summarize_title
 from harness.utils.prompts import SYSTEM_PROMPT
 from harness.utils.context import ConversationManager
 
@@ -21,8 +21,15 @@ WS_PORT = 8766
 async def handle_ws(websocket):
     client = Client("http://localhost:8000/mcp")
     ctx = ConversationManager()
-    messages = [SYSTEM_PROMPT.copy()]
-    ctx.new("Default")
+    convos = ctx.list()
+    if convos:
+        messages = ctx.load(convos[0]["id"]) or [SYSTEM_PROMPT.copy()]
+    else:
+        ctx.new("Default")
+        messages = [SYSTEM_PROMPT.copy()]
+    approval_queue = asyncio.Queue()
+    chat_queue = asyncio.Queue()
+    current_task = None  # tracks the running loop() task for stop
 
     async def send(msg_type, content):
         await websocket.send(json.dumps({"type": msg_type, "content": content}))
@@ -35,13 +42,27 @@ async def handle_ws(websocket):
             "current": ctx.current,
         }))
 
-    async with client:
-        await send_conversations()
+    async def on_event(event_type, content):
+        await websocket.send(json.dumps({"type": event_type, "content": content}))
 
+    async def ws_reader():
+        """Read all WebSocket messages, dispatch to appropriate queues."""
+        nonlocal messages
         async for raw in websocket:
             data = json.loads(raw)
 
-            # Handle commands
+            # Approval responses go straight to the approval queue
+            if data.get("command") == "approve":
+                await approval_queue.put(data.get("approved", False))
+                continue
+
+            # Stop cancels the current loop() task
+            if data.get("command") == "stop":
+                if current_task and not current_task.done():
+                    current_task.cancel()
+                continue
+
+            # Other commands handled inline
             if "command" in data:
                 cmd = data["command"]
 
@@ -66,7 +87,6 @@ async def handle_ws(websocket):
                     else:
                         messages = loaded
                         await send("system", f"Loaded conversation: {cid}")
-                        # Replay user/assistant messages to the UI
                         for m in messages:
                             if m.get("role") == "user":
                                 await send("user", m["content"])
@@ -76,10 +96,15 @@ async def handle_ws(websocket):
 
                 elif cmd == "delete":
                     cid = data.get("id", "")
+                    was_current = (cid == ctx.current)
                     ctx.delete(cid)
-                    if cid == ctx.current:
-                        ctx.new("Default")
-                        messages = [SYSTEM_PROMPT.copy()]
+                    if was_current:
+                        remaining = ctx.list()
+                        if remaining:
+                            messages = ctx.load(remaining[0]["id"]) or [SYSTEM_PROMPT.copy()]
+                        else:
+                            ctx.new("Default")
+                            messages = [SYSTEM_PROMPT.copy()]
                     await send("system", f"Deleted: {cid}")
                     await send_conversations()
 
@@ -89,10 +114,17 @@ async def handle_ws(websocket):
 
                 continue
 
-            # Handle chat messages
+            # Chat messages go to the chat queue
+            await chat_queue.put(data)
+
+    async def chat_processor():
+        """Process chat messages sequentially."""
+        nonlocal messages, current_task
+        while True:
+            data = await chat_queue.get()
             user_text = data.get("content", "")
 
-            # Support slash commands from chat input
+            # Slash commands from chat input
             if user_text.startswith("/"):
                 parts = user_text.split(maxsplit=1)
                 cmd = parts[0]
@@ -110,13 +142,43 @@ async def handle_ws(websocket):
                     await send_conversations()
                     continue
 
+            is_first_message = sum(1 for m in messages if m.get("role") == "user") == 0
             messages.append({"role": "user", "content": user_text})
-
-            async def on_event(event_type, content):
-                await websocket.send(json.dumps({"type": event_type, "content": content}))
-
-            await loop(client, messages, on_event=on_event)
+            loop_task = asyncio.create_task(
+                loop(client, messages, on_event=on_event, approval_queue=approval_queue)
+            )
+            current_task = loop_task
+            try:
+                await loop_task
+            except asyncio.CancelledError:
+                await on_event("system", "Stopped.")
+            finally:
+                current_task = None
             ctx.save(ctx.current, messages)
+
+            if is_first_message:
+                async def _auto_title(cid, text):
+                    try:
+                        title = await summarize_title(text)
+                        if title:
+                            ctx.rename(cid, title)
+                            await send_conversations()
+                    except Exception:
+                        pass
+                asyncio.create_task(_auto_title(ctx.current, user_text))
+
+    async with client:
+        await send_conversations()
+
+        # Run reader and chat processor concurrently
+        reader_task = asyncio.create_task(ws_reader())
+        processor_task = asyncio.create_task(chat_processor())
+
+        try:
+            # Wait for the reader to finish (WebSocket close)
+            await reader_task
+        finally:
+            processor_task.cancel()
 
 
 def serve_http():

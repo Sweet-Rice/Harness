@@ -70,6 +70,17 @@
     padding: 0 4px;
   }
   .convo-item .delete-btn:hover { color: #e55; }
+  .convo-item .name-input {
+    background: #2a2a2a;
+    border: 1px solid #7aafff;
+    color: #e0e0e0;
+    font-family: monospace;
+    font-size: 0.85em;
+    padding: 1px 4px;
+    outline: none;
+    flex: 1;
+    min-width: 0;
+  }
 
   /* Main area */
   #main {
@@ -158,7 +169,78 @@
     margin-left: 8px;
   }
   #send:hover { background: #5a9aee; }
+  #stop {
+    background: #da3633;
+    color: #fff;
+    border: none;
+    padding: 8px 16px;
+    font-family: monospace;
+    font-size: 14px;
+    cursor: pointer;
+    margin-left: 8px;
+    display: none;
+  }
+  #stop:hover { background: #f85149; }
   #status { padding: 4px 16px; font-size: 0.8em; color: #666; }
+
+  /* Proposal / diff styles */
+  .proposal {
+    background: #1e1e1e;
+    border: 1px solid #444;
+    border-radius: 4px;
+    margin: 8px 0;
+    padding: 12px;
+  }
+  .proposal-header {
+    color: #e8a63a;
+    font-size: 0.85em;
+    margin-bottom: 8px;
+  }
+  .proposal-diff {
+    background: #0d1117;
+    border-radius: 4px;
+    padding: 10px;
+    overflow-x: auto;
+    font-size: 0.85em;
+    line-height: 1.5;
+    margin-bottom: 8px;
+  }
+  .proposal-diff .diff-add { color: #3fb950; }
+  .proposal-diff .diff-del { color: #f85149; }
+  .proposal-diff .diff-hunk { color: #8b949e; }
+  .proposal-diff .diff-meta { color: #8b949e; font-weight: bold; }
+  .proposal-cmd {
+    background: #2a2a2a;
+    padding: 8px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    color: #999;
+    margin-bottom: 10px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+  }
+  .proposal-buttons {
+    display: flex;
+    gap: 8px;
+  }
+  .proposal-buttons button {
+    font-family: monospace;
+    font-size: 0.85em;
+    padding: 6px 16px;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .btn-approve { background: #238636; color: #fff; }
+  .btn-approve:hover { background: #2ea043; }
+  .btn-deny { background: #da3633; color: #fff; }
+  .btn-deny:hover { background: #f85149; }
+  .proposal-verdict {
+    font-size: 0.85em;
+    padding: 4px 0;
+  }
+  .proposal-verdict.approved { color: #3fb950; }
+  .proposal-verdict.denied { color: #f85149; }
 </style>
 </head>
 <body>
@@ -178,6 +260,7 @@
   <div id="input-bar">
     <input id="input" type="text" placeholder="Task..." autofocus />
     <button id="send">Send</button>
+    <button id="stop">Stop</button>
   </div>
 </div>
 
@@ -189,6 +272,7 @@ const statusEl = document.getElementById('status');
 const cookingEl = document.getElementById('cooking');
 const convoListEl = document.getElementById('convo-list');
 const newChatEl = document.getElementById('new-chat');
+const stopEl = document.getElementById('stop');
 
 let ws;
 let streamDiv = null;
@@ -218,8 +302,12 @@ function connect() {
       const label = document.getElementById('cooking-label');
       if (data.content === 'idle') {
         cookingEl.classList.remove('active');
+        stopEl.style.display = 'none';
+        sendEl.style.display = 'inline-block';
       } else {
         cookingEl.classList.add('active');
+        stopEl.style.display = 'inline-block';
+        sendEl.style.display = 'none';
         const labels = {
           cooking: 'cooking',
           planning: 'planning',
@@ -286,6 +374,77 @@ function connect() {
       return;
     }
 
+    if (data.type === 'proposal') {
+      const proposal = JSON.parse(data.content);
+      const div = document.createElement('div');
+      div.className = 'proposal';
+
+      // Header
+      const header = document.createElement('div');
+      header.className = 'proposal-header';
+      header.textContent = proposal.shell ? 'Proposed command' : 'Proposed write: ' + proposal.path;
+      div.appendChild(header);
+
+      // Diff with syntax coloring
+      const diffPre = document.createElement('pre');
+      diffPre.className = 'proposal-diff';
+      const lines = proposal.diff.split('\n');
+      lines.forEach(line => {
+        const span = document.createElement('span');
+        if (line.startsWith('+++') || line.startsWith('---')) {
+          span.className = 'diff-meta';
+        } else if (line.startsWith('@@')) {
+          span.className = 'diff-hunk';
+        } else if (line.startsWith('+')) {
+          span.className = 'diff-add';
+        } else if (line.startsWith('-')) {
+          span.className = 'diff-del';
+        }
+        span.textContent = line;
+        diffPre.appendChild(span);
+        diffPre.appendChild(document.createTextNode('\n'));
+      });
+      div.appendChild(diffPre);
+
+      // Bash command display
+      const cmdPre = document.createElement('pre');
+      cmdPre.className = 'proposal-cmd';
+      cmdPre.textContent = proposal.command;
+      div.appendChild(cmdPre);
+
+      // Approve / Deny buttons
+      const buttons = document.createElement('div');
+      buttons.className = 'proposal-buttons';
+
+      const approveBtn = document.createElement('button');
+      approveBtn.className = 'btn-approve';
+      approveBtn.textContent = 'Approve';
+
+      const denyBtn = document.createElement('button');
+      denyBtn.className = 'btn-deny';
+      denyBtn.textContent = 'Deny';
+
+      function respond(approved) {
+        ws.send(JSON.stringify({ command: 'approve', approved }));
+        buttons.remove();
+        const verdict = document.createElement('div');
+        verdict.className = 'proposal-verdict ' + (approved ? 'approved' : 'denied');
+        verdict.textContent = approved ? 'Approved' : 'Denied';
+        div.appendChild(verdict);
+      }
+
+      approveBtn.addEventListener('click', () => respond(true));
+      denyBtn.addEventListener('click', () => respond(false));
+
+      buttons.appendChild(approveBtn);
+      buttons.appendChild(denyBtn);
+      div.appendChild(buttons);
+
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      return;
+    }
+
     if (data.type === 'message') {
       if (streamContent && data.content === streamContent) {
         streamContent = "";
@@ -306,9 +465,37 @@ function renderConversations(convos, currentId) {
 
     const nameSpan = document.createElement('span');
     nameSpan.textContent = `${c.name} (${c.message_count})`;
-    nameSpan.addEventListener('click', () => {
-      messagesEl.innerHTML = '';
-      ws.send(JSON.stringify({ command: 'load', id: c.id }));
+    nameSpan.style.flex = '1';
+    nameSpan.style.minWidth = '0';
+    nameSpan.style.overflow = 'hidden';
+    nameSpan.style.textOverflow = 'ellipsis';
+    nameSpan.style.whiteSpace = 'nowrap';
+
+    nameSpan.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      const input = document.createElement('input');
+      input.className = 'name-input';
+      input.value = c.name;
+      input.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') {
+          ev.stopPropagation();
+          const newName = input.value.trim();
+          if (newName && newName !== c.name) {
+            ws.send(JSON.stringify({ command: 'rename', id: c.id, name: newName }));
+          } else {
+            input.replaceWith(nameSpan);
+          }
+        } else if (ev.key === 'Escape') {
+          input.replaceWith(nameSpan);
+        }
+      });
+      input.addEventListener('blur', () => {
+        if (input.parentNode) input.replaceWith(nameSpan);
+      });
+      input.addEventListener('click', (ev) => ev.stopPropagation());
+      nameSpan.replaceWith(input);
+      input.focus();
+      input.select();
     });
 
     const delBtn = document.createElement('button');
@@ -317,6 +504,15 @@ function renderConversations(convos, currentId) {
     delBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       ws.send(JSON.stringify({ command: 'delete', id: c.id }));
+    });
+
+    div.addEventListener('click', () => {
+      messagesEl.innerHTML = '';
+      streamDiv = null;
+      streamContent = "";
+      thinkingDiv = null;
+      thinkingContent = "";
+      ws.send(JSON.stringify({ command: 'load', id: c.id }));
     });
 
     div.appendChild(nameSpan);
@@ -354,6 +550,11 @@ newChatEl.addEventListener('click', () => {
 });
 
 sendEl.addEventListener('click', send);
+stopEl.addEventListener('click', () => {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ command: 'stop' }));
+  }
+});
 inputEl.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') send();
 });
