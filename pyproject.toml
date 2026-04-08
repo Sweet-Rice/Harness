@@ -9,6 +9,6 @@ requires-python = ">=3.10"
 dependencies = [
     "fastmcp>=3.2",
     "ollama",
-    
+    "websockets",
 ]
 

@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Harness</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: monospace;
+    background: #1a1a1a;
+    color: #e0e0e0;
+    height: 100vh;
+    display: flex;
+  }
+
+  /* Sidebar */
+  #sidebar {
+    width: 220px;
+    background: #151515;
+    border-right: 1px solid #333;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+  #sidebar-header {
+    padding: 12px;
+    border-bottom: 1px solid #333;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.9em;
+    color: #aaa;
+  }
+  #new-chat {
+    background: #7aafff;
+    color: #1a1a1a;
+    border: none;
+    padding: 4px 10px;
+    font-family: monospace;
+    font-size: 0.85em;
+    cursor: pointer;
+    border-radius: 3px;
+  }
+  #new-chat:hover { background: #5a9aee; }
+  #convo-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 0;
+  }
+  .convo-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 0.85em;
+    color: #999;
+    border-left: 3px solid transparent;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .convo-item:hover { background: #1e1e1e; color: #ccc; }
+  .convo-item.active { border-left-color: #7aafff; color: #e0e0e0; background: #1e1e1e; }
+  .convo-item .delete-btn {
+    background: none;
+    border: none;
+    color: #666;
+    cursor: pointer;
+    font-size: 0.9em;
+    padding: 0 4px;
+  }
+  .convo-item .delete-btn:hover { color: #e55; }
+
+  /* Main area */
+  #main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  #messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .msg { padding: 6px 0; word-wrap: break-word; }
+  .msg.user { color: #7aafff; white-space: pre-wrap; }
+  .msg.user::before { content: "> "; }
+  .msg.message { color: #e0e0e0; }
+  .msg.message pre { background: #2a2a2a; padding: 10px; border-radius: 4px; overflow-x: auto; margin: 8px 0; }
+  .msg.message code { background: #2a2a2a; padding: 2px 4px; border-radius: 2px; font-size: 0.9em; }
+  .msg.message pre code { background: none; padding: 0; }
+  .msg.log { color: #888; font-style: italic; font-size: 0.85em; white-space: pre-wrap; }
+  .msg.system { color: #e8a63a; font-size: 0.85em; font-style: italic; }
+  .msg.thinking {
+    color: #a080d0;
+    font-size: 0.85em;
+    font-style: italic;
+    white-space: pre-wrap;
+    border-left: 2px solid #a080d0;
+    padding-left: 8px;
+    margin-bottom: 4px;
+    max-height: 150px;
+    overflow-y: auto;
+  }
+  .msg.streaming { white-space: pre-wrap; }
+  .msg.streaming::after {
+    content: '\2588';
+    animation: blink 0.7s step-end infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  #cooking {
+    padding: 8px 16px;
+    font-size: 0.85em;
+    color: #e8a63a;
+    display: none;
+  }
+  #cooking.active { display: block; }
+  #cooking .dots::after {
+    content: '';
+    animation: dots 1.5s steps(4, end) infinite;
+  }
+  @keyframes dots {
+    0% { content: ''; }
+    25% { content: '.'; }
+    50% { content: '..'; }
+    75% { content: '...'; }
+    100% { content: ''; }
+  }
+  #input-bar {
+    display: flex;
+    border-top: 1px solid #333;
+    padding: 12px;
+    background: #222;
+  }
+  #input {
+    flex: 1;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    color: #e0e0e0;
+    font-family: monospace;
+    font-size: 14px;
+    padding: 8px 12px;
+    outline: none;
+  }
+  #input:focus { border-color: #7aafff; }
+  #send {
+    background: #7aafff;
+    color: #1a1a1a;
+    border: none;
+    padding: 8px 16px;
+    font-family: monospace;
+    font-size: 14px;
+    cursor: pointer;
+    margin-left: 8px;
+  }
+  #send:hover { background: #5a9aee; }
+  #status { padding: 4px 16px; font-size: 0.8em; color: #666; }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <div id="sidebar-header">
+    <span>Conversations</span>
+    <button id="new-chat">+ New</button>
+  </div>
+  <div id="convo-list"></div>
+</div>
+
+<div id="main">
+  <div id="status">disconnected</div>
+  <div id="messages"></div>
+  <div id="cooking"><span id="cooking-label">cooking</span><span class="dots"></span></div>
+  <div id="input-bar">
+    <input id="input" type="text" placeholder="Task..." autofocus />
+    <button id="send">Send</button>
+  </div>
+</div>
+
+<script>
+const messagesEl = document.getElementById('messages');
+const inputEl = document.getElementById('input');
+const sendEl = document.getElementById('send');
+const statusEl = document.getElementById('status');
+const cookingEl = document.getElementById('cooking');
+const convoListEl = document.getElementById('convo-list');
+const newChatEl = document.getElementById('new-chat');
+
+let ws;
+let streamDiv = null;
+let streamContent = "";
+let thinkingDiv = null;
+let thinkingContent = "";
+
+function connect() {
+  ws = new WebSocket(`ws://${location.hostname}:8766`);
+
+  ws.onopen = () => {
+    statusEl.textContent = 'connected';
+    statusEl.style.color = '#6a6';
+  };
+
+  ws.onclose = () => {
+    statusEl.textContent = 'disconnected — reconnecting...';
+    statusEl.style.color = '#a66';
+    cookingEl.classList.remove('active');
+    setTimeout(connect, 2000);
+  };
+
+  ws.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+
+    if (data.type === 'status') {
+      const label = document.getElementById('cooking-label');
+      if (data.content === 'idle') {
+        cookingEl.classList.remove('active');
+      } else {
+        cookingEl.classList.add('active');
+        const labels = {
+          cooking: 'cooking',
+          planning: 'planning',
+          executing: 'executing',
+          reviewing: 'reviewing',
+        };
+        label.textContent = labels[data.content] || data.content;
+      }
+      return;
+    }
+
+    if (data.type === 'conversations') {
+      renderConversations(data.content, data.current);
+      return;
+    }
+
+    if (data.type === 'stream_start') {
+      streamContent = "";
+      thinkingContent = "";
+      thinkingDiv = document.createElement('div');
+      thinkingDiv.className = 'msg thinking';
+      thinkingDiv.style.display = 'none';
+      messagesEl.appendChild(thinkingDiv);
+      streamDiv = document.createElement('div');
+      streamDiv.className = 'msg message streaming';
+      messagesEl.appendChild(streamDiv);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      return;
+    }
+
+    if (data.type === 'stream_thinking') {
+      if (thinkingDiv) {
+        thinkingContent += data.content;
+        thinkingDiv.style.display = 'block';
+        thinkingDiv.textContent = thinkingContent;
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+      return;
+    }
+
+    if (data.type === 'stream_token') {
+      if (streamDiv) {
+        streamContent += data.content;
+        streamDiv.textContent = streamContent;
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+      return;
+    }
+
+    if (data.type === 'stream_end') {
+      if (streamDiv) {
+        if (streamContent) {
+          streamDiv.innerHTML = marked.parse(streamContent);
+          streamDiv.classList.remove('streaming');
+        } else {
+          streamDiv.remove();
+        }
+      }
+      if (thinkingDiv && !thinkingContent) {
+        thinkingDiv.remove();
+      }
+      streamDiv = null;
+      thinkingDiv = null;
+      return;
+    }
+
+    if (data.type === 'message') {
+      if (streamContent && data.content === streamContent) {
+        streamContent = "";
+        return;
+      }
+      streamContent = "";
+    }
+
+    addMessage(data.type, data.content);
+  };
+}
+
+function renderConversations(convos, currentId) {
+  convoListEl.innerHTML = '';
+  convos.forEach(c => {
+    const div = document.createElement('div');
+    div.className = `convo-item${c.id === currentId ? ' active' : ''}`;
+
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = `${c.name} (${c.message_count})`;
+    nameSpan.addEventListener('click', () => {
+      messagesEl.innerHTML = '';
+      ws.send(JSON.stringify({ command: 'load', id: c.id }));
+    });
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'delete-btn';
+    delBtn.textContent = 'x';
+    delBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      ws.send(JSON.stringify({ command: 'delete', id: c.id }));
+    });
+
+    div.appendChild(nameSpan);
+    div.appendChild(delBtn);
+    convoListEl.appendChild(div);
+  });
+}
+
+function addMessage(type, content) {
+  const div = document.createElement('div');
+  div.className = `msg ${type}`;
+
+  if (type === 'message') {
+    div.innerHTML = marked.parse(content);
+  } else {
+    div.textContent = content;
+  }
+
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function send() {
+  const text = inputEl.value.trim();
+  if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+  addMessage('user', text);
+  ws.send(JSON.stringify({ content: text }));
+  inputEl.value = '';
+}
+
+newChatEl.addEventListener('click', () => {
+  messagesEl.innerHTML = '';
+  ws.send(JSON.stringify({ command: 'new' }));
+});
+
+sendEl.addEventListener('click', send);
+inputEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') send();
+});
+
+connect();
+</script>
+
+</body>
+</html>

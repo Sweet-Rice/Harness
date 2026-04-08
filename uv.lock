@@ -403,12 +403,14 @@ source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
     { name = "ollama" },
+    { name = "websockets" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "fastmcp", specifier = ">=3.2" },
     { name = "ollama" },
+    { name = "websockets" },
 ]
 
 [[package]]
