@@ -11,5 +11,6 @@ dependencies = [
     "ollama",
     "websockets",
     "tomli; python_version < '3.11'",
+    "beautifulsoup4",
 ]
 

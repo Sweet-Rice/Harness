@@ -16,3 +16,6 @@ model = "gemma4:latest"
 
 default_role = "orchestrator"
 max_tool_rounds = 15
+
+[services]
+searxng_url = "http://100.100.98.67:8080"  # Set to your SearXNG instance URL

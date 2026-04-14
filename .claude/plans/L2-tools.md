@@ -26,6 +26,8 @@ PARTIAL
 |------|------|-------------|
 | `read_file` | `harness/tools/files.py` | Read file contents (absolute path required) |
 | `write_file` | `harness/tools/files.py` | Propose file write — returns diff, requires user approval |
+| `web_search` | `harness/tools/search.py` | Search the web via SearXNG, return top results |
+| `fetch_url` | `harness/tools/search.py` | Fetch a URL and return readable text content |
 
 ### Utility Tools
 | Tool | File | Description |
@@ -42,7 +44,7 @@ PARTIAL
 
 ## What's Planned
 - **Shell execution** (`harness/tools/shell.py`): Run shell commands with output capture. Requires user confirmation for dangerous commands. Depends on: L3 (validation of command safety).
-- **Web search**: Search the internet, return summarized results. Depends on: L1 (inference for summarization).
+- ~~**Web search**~~: Done — `web_search` in `harness/tools/search.py` (SearXNG). Different search styles (news, images, academic) planned as separate tools.
 - **Calendar integration**: Read/write calendar events (Google Calendar or CalDAV). Depends on: auth infrastructure.
 - **Email**: Read/send email (Gmail or IMAP/SMTP). Requires user confirmation for sends. Depends on: auth infrastructure.
 - **Home automation**: Control smart devices. Requires user confirmation. Depends on: device API integration.
@@ -60,7 +62,7 @@ harness/tools/
   ├─ thinking.py       (enable_thinking, disable_thinking)
   ├─ ping.py           (ping)
   ├─ shell.py          (stub → shell execution)
-  ├─ search.py         (planned: web search)
+  ├─ search.py         (web_search — SearXNG)
   ├─ calendar.py       (planned: calendar)
   ├─ email.py          (planned: email)
   ├─ home.py           (planned: home automation)
@@ -75,8 +77,8 @@ Each module exports `TOOLS = [func1, func2, ...]`. The server auto-discovers the
 - **Auto-discovery**: `pkgutil.iter_modules` + `TOOLS` list export pattern — no central registry to maintain
 - **Tools wrap their own LLM calls**: Orchestration tools (plan, output, review) each call `ollama.chat()` directly rather than delegating back to the orchestrator
 - **Write approval required**: `write_file` returns a proposal, not a direct write
+- **All tool calls require user confirmation** — no tool executes without explicit approval
 
 ## Open Questions
-- Which tools require user confirmation? Current list: write_file, shell (dangerous commands), email (sends), home automation. What else?
 - Should tools have a permission/capability model (allowlist per agent)?
 - Auth strategy for external services (calendar, email, music) — OAuth tokens stored where?

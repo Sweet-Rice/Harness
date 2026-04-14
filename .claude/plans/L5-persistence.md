@@ -7,11 +7,29 @@ An abstraction layer for storing and retrieving context that persists across ses
 PARTIAL
 
 ## What Exists
-- **ConversationManager** in `harness/utils/context.py` (120 lines):
-  - SQLite backend at `harness/conversations.db`
-  - Two tables: `conversations` (id, name, created_at, updated_at) and `messages` (id, conversation_id, role, content, timestamp)
-  - Methods: `new()`, `load()`, `save()`, `list()`, `delete()`, `rename()`
-  - Used by both CLI (`harness/harness.py`) and web server (`harness/web/server.py`)
+
+### Abstract Persistence Interface (`harness/utils/persistence.py`)
+- **Document model**: `Document(id, collection, data, metadata, created_at, updated_at)` — universal unit of persistence
+- **PersistenceBackend ABC**: `write()`, `read()`, `query()`, `delete()` — abstract interface
+- **SQLiteBackend**: Single `documents` table with JSON columns, `json_extract()` for metadata filtering, composite PK `(collection, id)`
+- **`new_id()`**: Short UUID helper matching project convention
+
+### Plan File Versioning (`harness/utils/plan_store.py`)
+- **PlanStore** class using PersistenceBackend with two collections: `plans`, `plan_diffs`
+- **ctrl/in_use/diff model**: `create()` saves immutable ctrl snapshot + mutable in_use copy; `update()` appends full before/after diff
+- **Methods**: `create()`, `get()`, `update()`, `set_status()`, `get_diffs()`, `get_ctrl()`, `list_plans()`, `delete()`
+
+### Plan MCP Tools (`harness/tools/plans.py`)
+- Tools: `create_plan`, `get_plan`, `update_plan`, `set_plan_status`, `list_plans`, `get_plan_diffs`
+- Auto-discovered by MCP server
+
+### ConversationManager (`harness/utils/context.py`)
+- SQLite backend at `harness/conversations.db` (not yet migrated to PersistenceBackend)
+- Two tables: `conversations` (id, name, created_at, updated_at) and `messages` (id, conversation_id, role, content, position)
+- Methods: `new()`, `load()`, `save()`, `list()`, `delete()`, `rename()`
+- Used by both CLI (`harness/harness.py`) and web server (`harness/web/server.py`)
+
+### Other
 - **Thinking log** in `harness/utils/logger.py` — appends to `thinking.log` file (flat file, no abstraction)
 
 ## What's Planned

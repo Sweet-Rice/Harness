@@ -33,6 +33,7 @@ class HarnessConfig:
     db_path: str = ""
     thinking_log: str = ""
     max_tool_rounds: int = 15
+    searxng_url: str = ""
 
 
 def load_config(path: Path = CONFIG_PATH) -> HarnessConfig:
@@ -65,6 +66,9 @@ def load_config(path: Path = CONFIG_PATH) -> HarnessConfig:
     config.db_path = raw.get("db_path", "")
     config.thinking_log = raw.get("thinking_log", "")
     config.max_tool_rounds = raw.get("max_tool_rounds", 15)
+
+    services = raw.get("services", {})
+    config.searxng_url = services.get("searxng_url", "")
 
     return config
 
