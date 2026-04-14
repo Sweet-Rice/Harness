@@ -4,9 +4,11 @@ from datetime import datetime
 from pathlib import Path
 
 from .prompts import SYSTEM_PROMPT
+from harness.config import load_config
 
 
-DB_PATH = Path(__file__).parent.parent / "conversations.db"
+_config = load_config()
+DB_PATH = Path(_config.db_path) if _config.db_path else Path(__file__).parent.parent / "conversations.db"
 
 
 class ConversationManager:

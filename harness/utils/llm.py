@@ -1,58 +1,63 @@
-import ollama
-from .logger import log_thinking
+from harness.config import load_config
+from harness.utils.inference import InferenceClient
+from harness.utils.logger import log_thinking
 
 
-#determines extended thinking. decided each chat.
-_thinking = False
+_config = load_config()
+_inference = InferenceClient(_config)
 
-_aclient = ollama.AsyncClient()
+
+def get_inference() -> InferenceClient:
+    """Get the shared InferenceClient instance."""
+    return _inference
 
 
 async def print_event(event_type, content):
     """Default callback — prints to terminal."""
-    print(content)
+    if event_type in ("stream_token", "stream_thinking"):
+        print(content, end="", flush=True)
+    elif event_type == "stream_end":
+        print()
+    else:
+        print(content)
 
 
 async def get_tools(client):
+    """Convert MCP tool list to provider-agnostic tool dicts."""
     tools = await client.list_tools()
-    ollama_tools = []
-    for t in tools:
-        ollama_tools.append({
+    return [
+        {
             "type": "function",
-            "function":{
+            "function": {
                 "name": t.name,
                 "description": t.description,
                 "parameters": t.inputSchema,
-            }
-        })
-    return ollama_tools
+            },
+        }
+        for t in tools
+    ]
 
 
-MAX_TOOL_ROUNDS = 15
-
-
-async def _stream(messages, ollama_tools, on_event):
-    """Call LLM with tools. Streams tokens. Returns (content, tool_calls)."""
+async def _stream(messages, tools, on_event, *, role="orchestrator"):
+    """Stream from inference, emit events. Returns (content, tool_calls)."""
     await on_event("stream_start", "")
     full_content = ""
     full_thinking = ""
-    tool_calls = None
+    tool_calls = []
 
-    async for chunk in await _aclient.chat(
-        model="qwen3-coder",
-        messages=messages,
-        tools=ollama_tools,
-        think=_thinking,
-        stream=True,
+    async for chunk in _inference.stream(
+        role,
+        messages,
+        tools=tools,
     ):
-        if chunk.message.thinking:
-            full_thinking += chunk.message.thinking
-            await on_event("stream_thinking", chunk.message.thinking)
-        if chunk.message.content:
-            full_content += chunk.message.content
-            await on_event("stream_token", chunk.message.content)
-        if chunk.message.tool_calls:
-            tool_calls = chunk.message.tool_calls
+        if chunk.thinking:
+            full_thinking += chunk.thinking
+            await on_event("stream_thinking", chunk.thinking)
+        if chunk.content:
+            full_content += chunk.content
+            await on_event("stream_token", chunk.content)
+        if chunk.tool_calls:
+            tool_calls = chunk.tool_calls
 
     await on_event("stream_end", "")
 
@@ -62,34 +67,34 @@ async def _stream(messages, ollama_tools, on_event):
     return full_content, tool_calls
 
 
-async def loop(client, messages, on_event=None):
+async def loop(client, messages, on_event=None, *, role=None):
     if on_event is None:
         on_event = print_event
 
-    ollama_tools = await get_tools(client)
+    use_role = role or _config.default_role
+    tools = await get_tools(client)
 
     await on_event("status", "cooking")
 
-    for _ in range(MAX_TOOL_ROUNDS):
-        content, tool_calls = await _stream(messages, ollama_tools, on_event)
+    for _ in range(_config.max_tool_rounds):
+        content, tool_calls = await _stream(
+            messages, tools, on_event, role=use_role
+        )
 
         if tool_calls:
-            tool_names = ', '.join(tc.function.name for tc in tool_calls)
+            tool_names = ", ".join(tc.name for tc in tool_calls)
             await on_event("log", f"DEBUG -- tools: {tool_names}")
 
             assistant_msg = {"role": "assistant", "content": content}
             assistant_msg["tool_calls"] = [
-                {"function": {"name": tc.function.name, "arguments": tc.function.arguments}}
+                {"function": {"name": tc.name, "arguments": tc.arguments}}
                 for tc in tool_calls
             ]
             messages.append(assistant_msg)
 
             for tc in tool_calls:
-                result = await client.call_tool(
-                    tc.function.name,
-                    tc.function.arguments,
-                )
-                await on_event("log", f"TOOL -- {tc.function.name} returned: {result.data}")
+                result = await client.call_tool(tc.name, tc.arguments)
+                await on_event("log", f"TOOL -- {tc.name} returned: {result.data}")
                 messages.append({"role": "tool", "content": str(result)})
             continue
 
@@ -103,8 +108,3 @@ async def loop(client, messages, on_event=None):
     await on_event("log", "WARN -- max tool rounds reached")
     await on_event("message", content)
     await on_event("status", "idle")
-
-
-def set_thinking(value: bool):
-    global _thinking
-    _thinking = value

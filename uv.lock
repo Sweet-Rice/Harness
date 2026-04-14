@@ -403,6 +403,7 @@ source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
     { name = "ollama" },
+    { name = "tomli", marker = "python_full_version < '3.11'" },
     { name = "websockets" },
 ]
 
@@ -410,6 +411,7 @@ dependencies = [
 requires-dist = [
     { name = "fastmcp", specifier = ">=3.2" },
     { name = "ollama" },
+    { name = "tomli", marker = "python_full_version < '3.11'" },
     { name = "websockets" },
 ]
 
