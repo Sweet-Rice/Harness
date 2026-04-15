@@ -1,7 +1,8 @@
 import asyncio
 from fastmcp import Client
 
-from harness.utils.llm import loop
+from harness.utils.llm import print_event
+from harness.utils.supervisor import run
 from harness.utils.prompts import SYSTEM_PROMPT
 from harness.utils.context import ConversationManager
 
@@ -87,7 +88,7 @@ async def main():
                     continue
 
             messages.append({"role": "user", "content": user_input})
-            await loop(client, messages)
+            await run(client, messages, print_event)
             ctx.save(ctx.current, messages)
 
 

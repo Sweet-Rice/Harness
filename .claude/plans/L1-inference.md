@@ -4,52 +4,61 @@
 A single interface for talking to any model. All downstream code talks to this interface, never to a specific provider. This is foundational — everything else depends on it.
 
 ## Status
-PARTIAL
+DONE
 
 ## What Exists
-- `ollama.AsyncClient().chat()` calls throughout the codebase — hardcoded to Ollama
-- Model name `qwen3-coder` hardcoded in tool files (`plan.py`, `output.py`, `review.py`)
-- Streaming support via `stream=True` in `harness/utils/llm.py:_stream()`
-- Thinking mode toggle via global `_thinking` flag in `harness/utils/llm.py`
-- `harness/tools/thinking.py` — enable/disable thinking tools
 
-## What's Planned
-- **Abstract model interface**: A provider-agnostic class/protocol that wraps `chat()`, `stream()`, and model configuration. Swapping Ollama for another backend should require changing one config value, not editing tool files.
-  - Location: `harness/utils/inference.py` (new)
-  - Depends on: nothing (foundational)
-- **Model registry/config**: Named model profiles (e.g., `orchestrator: gemma4`, `coder: qwen3-coder`, `reviewer: gemma4`) loaded from config.
-  - Location: `harness/config.py` or similar (new)
-  - Depends on: abstract interface
-- **Per-task model routing**: Sub-agents and tools can request a model by role (e.g., "give me the coder model") rather than by name.
-  - Location: integrated into inference abstraction
-  - Depends on: model registry
+### Abstract Interface (`harness/utils/inference.py`)
+- **InferenceProvider** ABC with `chat()` and `stream()` methods
+- **InferenceClient** — entry point for all inference. Resolves roles to providers.
+  - `chat(role, messages, tools, think)` → `InferenceResult`
+  - `stream(role, messages, tools, think)` → `AsyncIterator[StreamChunk]`
+- Provider-agnostic data types: `ToolCallInfo`, `StreamChunk`, `InferenceResult`
+
+### Ollama Provider (`harness/utils/providers/ollama.py`)
+- `OllamaProvider` implementing `InferenceProvider`
+- Wraps `ollama.AsyncClient` — handles streaming, tool call extraction, thinking
+- Provider-specific details (tool call format, thinking tokens) encapsulated here
+
+### Config (`harness/config.py`, `harness.toml`)
+- TOML-based config with `[providers]` and `[models]` sections
+- Role-based model routing: orchestrator → qwen3.5, coder → qwen3-coder, reviewer → qwen3.5
+- `HarnessConfig` / `ProviderConfig` / `ModelConfig` dataclasses
+- Per-model options: `think` toggle, custom `options` dict
+
+### Integration
+- `harness/utils/llm.py` uses `InferenceClient` exclusively — no direct ollama calls
+- Shared instance via `get_inference()` — available to any module that needs LLM access
+- Agent delegation uses roles to route to different models (orchestrator role for planner agent, coder role for coder agent)
 
 ## Architecture
 ```
-Tool / Orchestrator
+Supervisor / Agent Loop
   │
   ▼
-InferenceClient (abstract interface)
+InferenceClient (role → provider + model)
   │
-  ├─ OllamaProvider (current backend)
+  ├─ OllamaProvider (current)
   ├─ Future: AnthropicProvider, OpenAIProvider, etc.
   │
   ▼
-Model Registry (config-driven)
-  ├─ orchestrator → gemma4
-  ├─ coder → qwen3-coder
-  └─ reviewer → gemma4
+harness.toml
+  ├─ orchestrator → ollama / qwen3.5
+  ├─ coder → ollama / qwen3-coder
+  └─ reviewer → ollama / qwen3.5
 ```
-
-All existing `ollama.chat()` calls in `plan.py`, `output.py`, `review.py`, and `llm.py` would be replaced with calls to the abstract interface.
 
 ## Key Decisions
 - **Ollama as initial backend**: Local inference, Apache 2.0 models, no API costs
-- **Gemma 4 as primary orchestrator**: Strong instruction following, clean structured outputs, less verbose
-- **Qwen 3 Coder for code tasks**: Better function calling and code generation, hybrid chain-of-thought
-- **Both Apache 2.0**: No licensing constraints
+- **Qwen 3.5 as orchestrator**: Strong instruction following, good for delegation
+- **Qwen 3 Coder for code tasks**: Better function calling and code generation
+- **Static config**: Roles mapped to models in TOML, not dynamic auto-selection
+- **Think toggle per model config**: The `think` field in ModelConfig, no runtime toggle tool (yet)
+
+## What's Remaining
+- Add more providers (Anthropic, OpenAI) when needed — just implement `InferenceProvider`
+- Runtime thinking toggle tool (old `thinking.py` was deleted in refactor)
 
 ## Open Questions
 - Should the abstraction support multiple simultaneous providers (e.g., Ollama for local + Claude API for hard tasks)?
 - How to handle provider-specific features (e.g., Ollama's thinking mode vs. Claude's extended thinking)?
-- Should model selection be static config or dynamic (auto-select based on task complexity)?

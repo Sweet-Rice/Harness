@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -70,12 +71,13 @@ def load_config(path: Path = CONFIG_PATH) -> HarnessConfig:
     services = raw.get("services", {})
     config.searxng_url = services.get("searxng_url", "")
 
+    _apply_env_overrides(config)
     return config
 
 
 def _defaults() -> HarnessConfig:
     """Defaults matching current behavior — Ollama with gemma4."""
-    return HarnessConfig(
+    config = HarnessConfig(
         providers={"ollama": ProviderConfig(name="ollama")},
         models={
             "orchestrator": ModelConfig(provider="ollama", model="gemma4:latest"),
@@ -83,3 +85,18 @@ def _defaults() -> HarnessConfig:
             "reviewer": ModelConfig(provider="ollama", model="gemma4:latest"),
         },
     )
+    _apply_env_overrides(config)
+    return config
+
+
+def _apply_env_overrides(config: HarnessConfig) -> None:
+    """Apply environment variable overrides on top of TOML/default config."""
+    ollama_host = os.getenv("OLLAMA_HOST", "").strip()
+    if ollama_host:
+        provider = config.providers.get("ollama")
+        if provider:
+            provider.base_url = ollama_host
+
+    searxng_url = os.getenv("SEARXNG_URL", "").strip()
+    if searxng_url:
+        config.searxng_url = searxng_url

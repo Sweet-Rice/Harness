@@ -22,6 +22,14 @@ PARTIAL
 ### Plan MCP Tools (`harness/tools/plans.py`)
 - Tools: `create_plan`, `get_plan`, `update_plan`, `set_plan_status`, `list_plans`, `get_plan_diffs`
 - Auto-discovered by MCP server
+- Used by both planner and coder agents as shared coordination state
+
+### Mmap Context Store (`harness/utils/context_store.py`)
+- **ContextStore** class — mmap-backed single-slot store for agent context switching
+- `save(key, messages)` — serializes messages to mmap, frees Python heap
+- `load(key)` — deserializes messages from mmap
+- Auto-grows if payload exceeds initial allocation (4MB default)
+- Used by supervisor for orchestrator context switching during agent delegation
 
 ### ConversationManager (`harness/utils/context.py`)
 - SQLite backend at `harness/conversations.db` (not yet migrated to PersistenceBackend)
@@ -34,22 +42,6 @@ PARTIAL
 
 ## What's Planned
 
-### Abstract Persistence Interface
-- **Read/write/query/delete** — the four operations. Everything that needs persistence goes through this interface.
-  - Location: `harness/utils/persistence.py` (new)
-  - Depends on: nothing
-- **Multiple storage backends**: Start with SQLite (already exists), add flat file and vector store backends as needed.
-  - Location: backend implementations under `harness/utils/backends/` (new)
-  - Depends on: abstract interface
-
-### Plan File Versioning
-The t.ai orchestration model uses plan files with three copies:
-- **ctrl**: The plan file before any changes. Immutable snapshot. The baseline.
-- **in_use**: The live copy that changes dynamically as agents iterate.
-- **appended diff**: A log of diffs from each iteration (ctrl vs in_use). Full auditability and rollback.
-  - Location: `harness/utils/plan_store.py` (new)
-  - Depends on: abstract persistence interface
-
 ### Context File Tree
 A persistent structure that stores context on files — what the system knows about the project it's operating on. Injected into and modified by agents.
   - Location: `harness/utils/file_context.py` (new)
@@ -58,7 +50,13 @@ A persistent structure that stores context on files — what the system knows ab
 ### Decouple Conversation Storage
 Refactor `ConversationManager` to use the abstract persistence interface instead of raw SQLite.
   - Location: refactor `harness/utils/context.py`
-  - Depends on: abstract interface
+  - Depends on: abstract interface (done)
+
+### Additional Backends
+- Flat file backend
+- Vector store backend (for memory embeddings — L4)
+  - Location: `harness/utils/backends/` (new)
+  - Depends on: abstract interface (done)
 
 ## Architecture
 ```
@@ -72,14 +70,17 @@ Memory (L4)     Orchestration (L6)     Conversations     File Context
   │                   │                     │
   ▼                   ▼                     ▼
 SQLite Backend    File Backend       Vector Store Backend
-(conversations)   (plan files)       (memory embeddings)
+
+Mmap Context Store (separate — raw memory for context switching)
+  └─ Used by supervisor for agent delegation
 ```
 
 ## Key Decisions
-- **SQLite as initial backend**: Already working for conversations. Proven, zero-config, single-file.
-- **Abstraction before expansion**: Build the interface before adding new storage types. Refactor ConversationManager to prove the abstraction works.
+- **SQLite as initial backend**: Already working. Proven, zero-config, single-file.
+- **Abstraction before expansion**: Interface built and proven with PlanStore. Ready for new backends.
+- **Mmap for context switching**: Separate from PersistenceBackend — purpose-built for agent delegation, not general persistence.
+- **Plan versioning is database-backed**: ctrl/in_use/diff stored as documents in SQLiteBackend, not as files on disk.
 
 ## Open Questions
-- Should plan file versioning be file-based (three actual files on disk) or database-backed (versions as rows)?
 - How does the context file tree get populated — static analysis, agent observation, or both?
 - What's the query interface for the vector store backend — raw similarity search or structured queries?

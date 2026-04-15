@@ -8,7 +8,7 @@ from pathlib import Path
 import websockets
 
 from fastmcp import Client
-from harness.utils.llm import loop
+from harness.utils.supervisor import run
 from harness.utils.prompts import SYSTEM_PROMPT
 from harness.utils.context import ConversationManager
 
@@ -19,13 +19,13 @@ WS_PORT = 8766
 
 
 async def handle_ws(websocket):
+    async def send(msg_type, content):
+        await websocket.send(json.dumps({"type": msg_type, "content": content}))
+
     client = Client("http://localhost:8000/mcp")
     ctx = ConversationManager()
     messages = [SYSTEM_PROMPT.copy()]
     ctx.new("Default")
-
-    async def send(msg_type, content):
-        await websocket.send(json.dumps({"type": msg_type, "content": content}))
 
     async def send_conversations():
         convos = ctx.list()
@@ -35,88 +35,99 @@ async def handle_ws(websocket):
             "current": ctx.current,
         }))
 
-    async with client:
-        await send_conversations()
+    try:
+        async with client:
+            await send_conversations()
 
-        async for raw in websocket:
-            data = json.loads(raw)
+            async for raw in websocket:
+                data = json.loads(raw)
 
-            # Handle commands
-            if "command" in data:
-                cmd = data["command"]
+                # Handle commands
+                if "command" in data:
+                    cmd = data["command"]
 
-                if cmd == "new":
-                    if ctx.current:
-                        ctx.save(ctx.current, messages)
-                    cid = ctx.new(name=data.get("name"))
-                    messages = [SYSTEM_PROMPT.copy()]
-                    await send("system", f"New conversation: {cid}")
-                    await send_conversations()
-
-                elif cmd == "list":
-                    await send_conversations()
-
-                elif cmd == "load":
-                    cid = data.get("id", "")
-                    if ctx.current:
-                        ctx.save(ctx.current, messages)
-                    loaded = ctx.load(cid)
-                    if loaded is None:
-                        await send("system", f"Conversation {cid} not found.")
-                    else:
-                        messages = loaded
-                        await send("system", f"Loaded conversation: {cid}")
-                        # Replay user/assistant messages to the UI
-                        for m in messages:
-                            if m.get("role") == "user":
-                                await send("user", m["content"])
-                            elif m.get("role") == "assistant":
-                                await send("message", m["content"])
-                    await send_conversations()
-
-                elif cmd == "delete":
-                    cid = data.get("id", "")
-                    ctx.delete(cid)
-                    if cid == ctx.current:
-                        ctx.new("Default")
+                    if cmd == "new":
+                        if ctx.current:
+                            ctx.save(ctx.current, messages)
+                        cid = ctx.new(name=data.get("name"))
                         messages = [SYSTEM_PROMPT.copy()]
-                    await send("system", f"Deleted: {cid}")
-                    await send_conversations()
+                        await send("system", f"New conversation: {cid}")
+                        await send_conversations()
 
-                elif cmd == "rename":
-                    ctx.rename(data.get("id", ""), data.get("name", ""))
-                    await send_conversations()
+                    elif cmd == "list":
+                        await send_conversations()
 
-                continue
+                    elif cmd == "load":
+                        cid = data.get("id", "")
+                        if ctx.current:
+                            ctx.save(ctx.current, messages)
+                        loaded = ctx.load(cid)
+                        if loaded is None:
+                            await send("system", f"Conversation {cid} not found.")
+                        else:
+                            messages = loaded
+                            await send("system", f"Loaded conversation: {cid}")
+                            # Replay user/assistant messages to the UI
+                            for m in messages:
+                                if m.get("role") == "user":
+                                    await send("user", m["content"])
+                                elif m.get("role") == "assistant":
+                                    await send("message", m["content"])
+                        await send_conversations()
 
-            # Handle chat messages
-            user_text = data.get("content", "")
+                    elif cmd == "delete":
+                        cid = data.get("id", "")
+                        ctx.delete(cid)
+                        if cid == ctx.current:
+                            ctx.new("Default")
+                            messages = [SYSTEM_PROMPT.copy()]
+                        await send("system", f"Deleted: {cid}")
+                        await send_conversations()
 
-            # Support slash commands from chat input
-            if user_text.startswith("/"):
-                parts = user_text.split(maxsplit=1)
-                cmd = parts[0]
-                arg = parts[1] if len(parts) > 1 else ""
+                    elif cmd == "rename":
+                        ctx.rename(data.get("id", ""), data.get("name", ""))
+                        await send_conversations()
 
-                if cmd == "/new":
-                    if ctx.current:
-                        ctx.save(ctx.current, messages)
-                    cid = ctx.new(name=arg or None)
-                    messages = [SYSTEM_PROMPT.copy()]
-                    await send("system", f"New conversation: {cid}")
-                    await send_conversations()
                     continue
-                elif cmd == "/list":
-                    await send_conversations()
-                    continue
 
-            messages.append({"role": "user", "content": user_text})
+                # Handle chat messages
+                user_text = data.get("content", "")
 
-            async def on_event(event_type, content):
-                await websocket.send(json.dumps({"type": event_type, "content": content}))
+                # Support slash commands from chat input
+                if user_text.startswith("/"):
+                    parts = user_text.split(maxsplit=1)
+                    cmd = parts[0]
+                    arg = parts[1] if len(parts) > 1 else ""
 
-            await loop(client, messages, on_event=on_event)
-            ctx.save(ctx.current, messages)
+                    if cmd == "/new":
+                        if ctx.current:
+                            ctx.save(ctx.current, messages)
+                        cid = ctx.new(name=arg or None)
+                        messages = [SYSTEM_PROMPT.copy()]
+                        await send("system", f"New conversation: {cid}")
+                        await send_conversations()
+                        continue
+                    elif cmd == "/list":
+                        await send_conversations()
+                        continue
+
+                messages.append({"role": "user", "content": user_text})
+
+                async def on_event(event_type, content):
+                    await websocket.send(json.dumps({"type": event_type, "content": content}))
+
+                try:
+                    await run(client, messages, on_event)
+                    ctx.save(ctx.current, messages)
+                except Exception as exc:
+                    await send("system", f"Backend error: {exc}")
+                    await send("status", "idle")
+    except Exception as exc:
+        try:
+            await send("system", f"Backend startup error: {exc}")
+            await send("status", "idle")
+        except Exception:
+            pass
 
 
 def serve_http():

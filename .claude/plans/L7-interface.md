@@ -8,21 +8,20 @@ PARTIAL
 
 ## What Exists
 
-### CLI (`harness/harness.py`, 96 lines)
+### CLI (`harness/harness.py`)
 - Terminal-based conversation interface
 - Commands: `/new`, `/list`, `/load`, `/delete`, `/rename`
-- Calls `loop()` from `harness/utils/llm.py` for each user input
+- Calls `supervisor.run()` for each user input
 - Saves conversation state via `ConversationManager`
-- Terminal-based approval prompt for write proposals
 
 ### Web UI
-- **Server** (`harness/web/server.py`, 144 lines):
+- **Server** (`harness/web/server.py`):
   - HTTP server on port 8765 (serves static files)
   - WebSocket server on port 8766 (real-time communication)
   - Handles conversation management commands over WebSocket
   - Streams events to frontend
-  - Approval queue wiring for write proposals
-- **Frontend** (`harness/web/static/index.html`, 365 lines):
+  - Calls `supervisor.run()` for chat messages
+- **Frontend** (`harness/web/static/index.html`):
   - Sidebar with conversation list + "New Chat" button
   - Main message area with scrolling
   - Input bar with Send button
@@ -30,11 +29,15 @@ PARTIAL
   - Markdown rendering via marked.js
   - Thinking display (collapsible)
   - "cooking" status indicator with animated dots
-  - Git-style diff display for write proposals with Approve/Deny buttons
+  - Git-style diff display for write proposals with Approve/Deny buttons (UI exists but write_file no longer sends proposals)
 
 ### MCP Server (`harness/server.py`)
 - FastMCP HTTP server on port 8000
 - Exposes all tools via MCP protocol
+
+## What's Missing / Regressed
+- **Write approval flow**: `write_file` currently writes directly. The old proposal/diff/approve flow in the UI still has the rendering code, but `write_file` no longer emits `proposal` events. Needs reconnecting.
+- **Agent status in UI**: Supervisor emits `status: "agent:<name>"` events. The frontend may not handle this — currently only knows `cooking` and `idle`.
 
 ## What's Planned
 
@@ -60,16 +63,17 @@ PARTIAL
      │            │            │             │
      ▼            ▼            ▼             ▼
 ┌─────────────────────────────────────────────────┐
-│         Orchestrator (loop in llm.py)           │
+│    Supervisor (supervisor.run)                   │
+│      └─ Orchestrator loop + agent delegation     │
 └─────────────────────────────────────────────────┘
 ```
 
-All interfaces call the same `loop()` function with different `on_event` callbacks.
+All interfaces call `supervisor.run()` with different `on_event` callbacks.
 
 ## Key Decisions
 - **CLI first**: Simplest to build and debug, always available
 - **Web second**: Richer UI for streaming, diffs, conversations
-- **Same orchestrator for all interfaces**: No interface-specific logic in the core
+- **Same supervisor for all interfaces**: No interface-specific logic in the core
 
 ## Open Questions
 - Voice: always-listening mode or push-to-talk?

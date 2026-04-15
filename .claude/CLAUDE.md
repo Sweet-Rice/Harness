@@ -22,7 +22,7 @@ A bare LLM is just text-in, text-out. It can't remember, can't act, can't plan, 
 ## Stack
 
 - **Language:** Python
-- **LLM:** Local models via Ollama — Gemma 4 (orchestrator), Qwen 3 Coder (code tasks)
+- **LLM:** Local models via Ollama — Qwen 3.5 (orchestrator/reviewer), Qwen 3 Coder (code tasks)
 - **Delivery:** MCP server (FastMCP)
 - **Storage:** SQLite (conversations), vector store (memory — planned)
 - **Web:** WebSocket server + static HTML frontend
@@ -32,9 +32,9 @@ A bare LLM is just text-in, text-out. It can't remember, can't act, can't plan, 
 
 | # | Layer | Plan File | Status |
 |---|-------|-----------|--------|
-| 1 | Inference Abstraction | [L1-inference.md](plans/L1-inference.md) | PARTIAL |
+| 1 | Inference Abstraction | [L1-inference.md](plans/L1-inference.md) | DONE |
 | 2 | Tool Use | [L2-tools.md](plans/L2-tools.md) | PARTIAL |
-| 3 | Self-Correction | [L3-self-correction.md](plans/L3-self-correction.md) | PARTIAL |
+| 3 | Self-Correction | [L3-self-correction.md](plans/L3-self-correction.md) | MINIMAL |
 | 4 | Memory | [L4-memory.md](plans/L4-memory.md) | NOT STARTED |
 | 5 | Persistent Context Storage | [L5-persistence.md](plans/L5-persistence.md) | PARTIAL |
 | 6 | Planning & Orchestration | [L6-orchestration.md](plans/L6-orchestration.md) | PARTIAL |
@@ -46,19 +46,26 @@ Roadmap and build order: [overview.md](plans/overview.md)
 
 | File | Purpose |
 |------|---------|
-| `harness/utils/llm.py` | Main tool-calling loop, streaming, proposal handling |
-| `harness/utils/prompts.py` | SYSTEM_PROMPT (orchestrator instructions) |
+| `harness/utils/llm.py` | Main loop, streaming, DelegationRequest, run_agent injection |
+| `harness/utils/supervisor.py` | Context switch cycle: save → agent → restore |
+| `harness/utils/agents.py` | AgentConfig, premade agent registry (planner, coder) |
+| `harness/utils/context_store.py` | Mmap-backed context store for agent switching |
+| `harness/utils/inference.py` | InferenceProvider ABC, InferenceClient |
+| `harness/utils/providers/ollama.py` | OllamaProvider implementation |
+| `harness/config.py` | HarnessConfig, TOML loader, role-based model config |
+| `harness/utils/prompts.py` | SYSTEM_PROMPT (orchestrator delegation instructions) |
 | `harness/utils/context.py` | ConversationManager (SQLite persistence) |
+| `harness/utils/persistence.py` | PersistenceBackend ABC, SQLiteBackend |
+| `harness/utils/plan_store.py` | PlanStore (ctrl/in_use/diff versioning) |
 | `harness/utils/logger.py` | Thinking log side channel |
-| `harness/tools/plan.py` | plan() + plan_review() with their prompts |
-| `harness/tools/output.py` | output() (inner tool loop) + output_review() |
-| `harness/tools/files.py` | read_file + write_file (proposal-based) |
-| `harness/tools/review.py` | review_code tool |
-| `harness/tools/thinking.py` | Extended thinking toggle |
+| `harness/tools/files.py` | read_file + write_file |
+| `harness/tools/search.py` | web_search (SearXNG) + fetch_url |
+| `harness/tools/plans.py` | Plan MCP tools (create, get, update, status, list, diffs) |
 | `harness/server.py` | FastMCP server, tool auto-discovery |
-| `harness/web/server.py` | WebSocket + HTTP server, approval queue wiring |
+| `harness/web/server.py` | WebSocket + HTTP server |
 | `harness/web/static/index.html` | Frontend (streaming, markdown, diff display, conversations) |
-| `harness/harness.py` | CLI entry point (with terminal approval prompt) |
+| `harness/harness.py` | CLI entry point |
+| `harness.toml` | Provider + model + service config |
 
 ## Running
 

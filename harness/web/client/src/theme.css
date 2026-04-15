@@ -1,0 +1,70 @@
+:root {
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #151515;
+  --bg-elevated: #222;
+  --bg-input: #2a2a2a;
+  --text-primary: #e0e0e0;
+  --text-secondary: #999;
+  --text-muted: #888;
+  --accent-blue: #7aafff;
+  --accent-blue-hover: #5a9aee;
+  --accent-orange: #e8a63a;
+  --accent-purple: #a080d0;
+  --accent-red: #e55;
+  --accent-green: #6a6;
+  --border: #333;
+  --border-focus: #7aafff;
+  --font-mono: monospace;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-mono);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  height: 100vh;
+  overflow: hidden;
+}
+
+#root {
+  height: 100vh;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+@keyframes dots {
+  0% { content: ''; }
+  25% { content: '.'; }
+  50% { content: '..'; }
+  75% { content: '...'; }
+  100% { content: ''; }
+}
+
+.dots-anim::after {
+  content: '';
+  animation: dots 1.5s steps(4, end) infinite;
+}
