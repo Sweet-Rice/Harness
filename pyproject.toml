@@ -10,5 +10,7 @@ dependencies = [
     "fastmcp>=3.2",
     "ollama",
     "websockets",
+    "discord.py>=2.3",
+    "python-dotenv",
 ]
 
