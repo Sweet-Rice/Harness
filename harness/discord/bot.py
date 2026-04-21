@@ -1,8 +1,4 @@
-"""Discord bot interface for the Harness AI assistant.
-
-Calls Ollama directly for chat, persists conversations per channel via
-ConversationManager, and streams responses through a pluggable Renderer.
-"""
+"""Discord bot interface for the Harness AI assistant."""
 
 from __future__ import annotations
 
@@ -13,40 +9,20 @@ import time
 from dataclasses import dataclass, field
 
 import discord
-import ollama
 from discord.ext import commands
-from dotenv import load_dotenv
 
-load_dotenv()
-
+from harness.utils.config import SETTINGS
 from harness.utils.context import ConversationManager
+from harness.utils.inference import get_default_registry
+from harness.utils.orchestration.prompts import get_chat_system_prompt
 from harness.discord.renderer import TextRenderer
 
 
 TOKEN = os.environ.get("HARNESS_DISCORD_TOKEN", "")
-MODEL = os.environ.get("HARNESS_MODEL", "gemma4:latest")
-MAX_CONTEXT_MESSAGES = max(2, int(os.environ.get("HARNESS_MAX_CONTEXT_MESSAGES", "20")))
-
-
-def _parse_think_setting(value: str) -> bool | str:
-    normalized = value.strip().lower()
-    if normalized in {"", "false", "0", "off", "no"}:
-        return False
-    if normalized in {"true", "1", "on", "yes"}:
-        return True
-    return value.strip()
-
-
-THINK = _parse_think_setting(os.environ.get("HARNESS_THINK", "false"))
-
-SYSTEM_MESSAGE = {
-    "role": "system",
-    "content": (
-        "You are T.ai, a helpful personal AI assistant. "
-        "You are running on the user's local machine via Ollama. "
-        "Be concise and direct."
-    ),
-}
+MODEL = get_default_registry().model_for("chat")
+MAX_CONTEXT_MESSAGES = SETTINGS.discord_max_context_messages
+THINK = SETTINGS.think
+SYSTEM_MESSAGE = get_chat_system_prompt()
 
 
 @dataclass
@@ -104,9 +80,6 @@ def _parse_summarize(text: str) -> int | None:
     return DEFAULT_SUMMARY_COUNT
 
 
-_ollama = ollama.AsyncClient()
-
-
 def _window_messages(messages: list[dict]) -> list[dict]:
     """Keep the system prompt plus only the most recent conversation turns."""
     if len(messages) <= MAX_CONTEXT_MESSAGES:
@@ -121,27 +94,24 @@ def _window_messages(messages: list[dict]) -> list[dict]:
 async def _stream_chat(messages: list[dict], renderer: TextRenderer) -> str:
     """Send messages to Ollama with streaming and return the full response."""
     start = time.perf_counter()
-    ollama_messages = [
+    chat_messages = [
         {"role": m["role"], "content": m["content"]}
         for m in _window_messages(messages)
     ]
-    async for chunk in await _ollama.chat(
+    inference = get_default_registry().get_client()
+    async for chunk in inference.stream_chat(
         model=MODEL,
-        messages=ollama_messages,
-        stream=True,
+        messages=chat_messages,
         think=THINK,
     ):
-        message = chunk.get("message", {})
-        thinking = message.get("thinking", "")
-        token = message.get("content", "")
-        if thinking:
-            await renderer.thinking(thinking)
-        if token:
-            await renderer.token(token)
+        if chunk.thinking:
+            await renderer.thinking(chunk.thinking)
+        if chunk.content:
+            await renderer.token(chunk.content)
     elapsed = time.perf_counter() - start
     print(
         f"[DEBUG] Ollama stream finished in {elapsed:.2f}s "
-        f"with {len(ollama_messages)} messages"
+        f"with {len(chat_messages)} messages"
     )
     return await renderer.finish()
 
