@@ -7,7 +7,7 @@ Without memory, every conversation starts from zero. Memory gives the agent cont
 NOT STARTED
 
 ## What Exists
-- SQLite conversation history in `harness/utils/context.py` — this is conversation persistence (L5), not memory. Messages are stored verbatim; there's no semantic retrieval, summarization, or injection into new sessions.
+- Typed thread/message persistence in `harness/utils/context/` and `harness/utils/persistence/` — this is conversation and orchestration persistence (L5), not memory. Messages and plan state persist, but there is no semantic retrieval, summarization-based memory injection, or vector-backed recall yet.
 
 ## Memory Tiers
 
@@ -29,7 +29,7 @@ The conversation window itself. Already exists implicitly in the message history
   - Location: `harness/memory/facts.py` (new)
   - Depends on: L5 (persistent context storage), vector store library
 - **Injection into system prompt**: Relevant memories retrieved at conversation start and injected as context.
-  - Location: integrated into `harness/utils/prompts.py`
+  - Location: integrated into `harness/utils/orchestration/prompts.py` or a higher-level orchestration assembly layer
   - Depends on: fact store
 
 ### Episodic Memory

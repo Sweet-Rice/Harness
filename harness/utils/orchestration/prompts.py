@@ -9,7 +9,8 @@ def get_orchestrator_system_prompt() -> dict:
             "You can delegate focused tasks to a sub-agent using the delegate_agent tool. "
             "Use delegation when a task requires focused work with specific tools — "
             "for example, reading multiple files, writing code, or performing multi-step file operations. "
-            "Specify exactly which tools the sub-agent needs. "
+            "Delegate one explicit active plan step at a time. "
+            "When possible, include step_id, title, summary, context, and exactly which tools the sub-agent needs. "
             "Review the sub-agent's results and refine if necessary."
         ),
     }
@@ -21,7 +22,7 @@ def get_delegate_system_prompt() -> dict:
         "content": (
             "You are a focused task agent. You have been delegated a specific task "
             "and given access to specific tools. Complete the task thoroughly and "
-            "return your results. Do not ask for clarification — work with what "
+            "return a structured result for that single step. Do not ask for clarification — work with what "
             "you have. Be concise in your final response: state what you did and "
             "what the results are."
         ),

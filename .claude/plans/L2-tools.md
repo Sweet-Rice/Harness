@@ -1,82 +1,80 @@
 # Layer 2: Tool Use
 
 ## Purpose
-The agent can take actions in the world. Each tool is a self-contained function registered declaratively via MCP. Adding a new capability means writing one function, not changing the core.
+
+The agent can take actions in the world. Each raw capability is registered declaratively via MCP or exposed as an orchestration-owned pseudo-tool. Adding a capability should not require editing the core loop.
 
 ## Status
+
 PARTIAL
 
 ## What Exists
 
 ### Tool Infrastructure
+
 - FastMCP server in `harness/server.py` with auto-discovery via `pkgutil`
-- Each tool module exports a `TOOLS` list
-- Tools registered at startup, served on `http://0.0.0.0:8000`
+- Each tool module exports `TOOLS = [...]`
+- Shared tool registration in `harness/utils/loop/tool_registry.py`
+- Shared tool dispatch in `harness/utils/loop/tool_dispatch.py`
 
-### Orchestration Tools (each wraps its own `ollama.chat()` call)
+### Current MCP Tools
+
 | Tool | File | Description |
 |------|------|-------------|
-| `plan` | `harness/tools/plan.py` | Generate numbered step-by-step plan |
-| `plan_review` | `harness/tools/plan.py` | Review plan against intent → PASS/FAIL |
-| `output` | `harness/tools/output.py` | Execute plan, produce deliverable (inner tool loop) |
-| `output_review` | `harness/tools/output.py` | Review output against plan + intent → PASS/FAIL |
+| `read_file` | `harness/tools/files.py` | Read UTF-8 file contents from absolute paths |
+| `write_file` | `harness/tools/files.py` | Return a structured non-mutating write proposal |
 
-### Execution Tools
-| Tool | File | Description |
-|------|------|-------------|
-| `read_file` | `harness/tools/files.py` | Read file contents (absolute path required) |
-| `write_file` | `harness/tools/files.py` | Propose file write — returns diff, requires user approval |
+### Current Orchestration-Owned Pseudo-Tools
 
-### Utility Tools
-| Tool | File | Description |
-|------|------|-------------|
-| `review_code` | `harness/tools/review.py` | LLM-based pragmatic code review |
-| `enable_thinking` | `harness/tools/thinking.py` | Enable extended thinking mode |
-| `disable_thinking` | `harness/tools/thinking.py` | Disable extended thinking mode |
-| `ping` | `harness/tools/ping.py` | Connection test |
+| Tool | Owner | Description |
+|------|-------|-------------|
+| `delegate_agent` | `utils/orchestration/delegation.py` | Restricted sub-agent execution |
+| `trigger_skill` | `utils/orchestration/skills.py` | Explicit higher-level skill trigger |
 
-### Stubs
-| Tool | File | Description |
-|------|------|-------------|
-| `shell` | `harness/tools/shell.py` | Empty — 1 line stub |
+### Current Policy Boundary
+
+- MCP registration and client exposure are intentionally separate
+- Web and Discord do not implicitly share the same visible tool set
+- Discord is default-deny and only sees allowlisted tools/pseudo-tools
 
 ## What's Planned
-- **Shell execution** (`harness/tools/shell.py`): Run shell commands with output capture. Requires user confirmation for dangerous commands. Depends on: L3 (validation of command safety).
-- **Web search**: Search the internet, return summarized results. Depends on: L1 (inference for summarization).
-- **Calendar integration**: Read/write calendar events (Google Calendar or CalDAV). Depends on: auth infrastructure.
-- **Email**: Read/send email (Gmail or IMAP/SMTP). Requires user confirmation for sends. Depends on: auth infrastructure.
-- **Home automation**: Control smart devices. Requires user confirmation. Depends on: device API integration.
-- **Music control**: Play/pause/search music. Depends on: service API (Spotify, etc.).
-- **Code execution sandbox**: Run code in an isolated environment and return results. Depends on: sandboxing strategy.
+
+- **Shell execution**
+  Run shell commands with output capture and explicit confirmation for dangerous actions
+- **Web search**
+  Search and summarize external results
+- **Calendar integration**
+  Read/write calendar events with proper auth
+- **Email**
+  Read/send email, with confirmation for sends
+- **Home automation**
+  Control local devices with explicit confirmation
+- **Music control**
+  Playback/search integration
+- **Code execution sandbox**
+  Execute code in an isolated environment
+
+These can land either as raw MCP tools or as higher-level skill/orchestration entrypoints, but raw capability should still live behind the tool boundary.
 
 ## Architecture
-```
-harness/tools/
-  ├─ __init__.py
-  ├─ files.py          (read_file, write_file)
-  ├─ plan.py           (plan, plan_review)
-  ├─ output.py         (output, output_review)
-  ├─ review.py         (review_code)
-  ├─ thinking.py       (enable_thinking, disable_thinking)
-  ├─ ping.py           (ping)
-  ├─ shell.py          (stub → shell execution)
-  ├─ search.py         (planned: web search)
-  ├─ calendar.py       (planned: calendar)
-  ├─ email.py          (planned: email)
-  ├─ home.py           (planned: home automation)
-  ├─ music.py          (planned: music)
-  └─ sandbox.py        (planned: code execution)
-```
 
-Each module exports `TOOLS = [func1, func2, ...]`. The server auto-discovers them.
+```
+harness/tools/           → raw MCP tools
+harness/server.py        → MCP registration
+utils/loop/              → tool schema + dispatch
+utils/orchestration/     → pseudo-tools + policy
+clients (web/discord)    → filtered exposure only
+```
 
 ## Key Decisions
-- **MCP as transport**: Model Context Protocol for tool registration and invocation
-- **Auto-discovery**: `pkgutil.iter_modules` + `TOOLS` list export pattern — no central registry to maintain
-- **Tools wrap their own LLM calls**: Orchestration tools (plan, output, review) each call `ollama.chat()` directly rather than delegating back to the orchestrator
-- **Write approval required**: `write_file` returns a proposal, not a direct write
+
+- MCP remains the transport and registration model
+- Auto-discovery via `TOOLS = [...]` remains the default registration pattern
+- Dangerous actions should prefer proposal/approval contracts over silent mutation
+- Client visibility and raw tool existence are different concerns
 
 ## Open Questions
-- Which tools require user confirmation? Current list: write_file, shell (dangerous commands), email (sends), home automation. What else?
-- Should tools have a permission/capability model (allowlist per agent)?
-- Auth strategy for external services (calendar, email, music) — OAuth tokens stored where?
+
+- Which future tools require confirmation?
+- How fine-grained should per-agent/per-client tool policy become?
+- Where should credentials for external-service tools live?

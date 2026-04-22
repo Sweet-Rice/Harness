@@ -45,3 +45,42 @@ class ConversationRepository(Protocol):
 
     def rename_thread(self, thread_id: str, name: str) -> None:
         ...
+
+
+class PlanStore(Protocol):
+    def create_workspace(
+        self,
+        name: str,
+        *,
+        thread_id: str,
+        mode: str,
+        source: str | None,
+        client_id: str | None,
+        initial_content: str,
+    ):
+        ...
+
+    def list_workspaces(self):
+        ...
+
+    def get_workspace(self, workspace_id: str):
+        ...
+
+    def find_workspace_by_thread(self, thread_id: str, *, mode: str | None = None):
+        ...
+
+    def load_current_plan_state(self, workspace_id: str) -> str:
+        ...
+
+    def snapshot_ctrl(self, workspace_id: str, content: str) -> None:
+        ...
+
+    def update_in_use(
+        self,
+        workspace_id: str,
+        new_content: str,
+        *,
+        reason: str,
+        summary: str,
+    ):
+        ...

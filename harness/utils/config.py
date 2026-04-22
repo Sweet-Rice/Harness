@@ -50,6 +50,7 @@ class HarnessConfig:
 
     # Shared persistence.
     db_path: str = str(Path(__file__).resolve().parents[1] / "jarvis.db")
+    plan_store_path: str = str(Path(__file__).resolve().parents[1] / "plan_store")
 
     # Loop/runtime behavior.
     max_loop_rounds: int = 15
@@ -108,6 +109,10 @@ class HarnessConfig:
             db_path=os.environ.get(
                 "HARNESS_DB_PATH",
                 str(Path(__file__).resolve().parents[1] / "jarvis.db"),
+            ),
+            plan_store_path=os.environ.get(
+                "HARNESS_PLAN_STORE_PATH",
+                str(Path(__file__).resolve().parents[1] / "plan_store"),
             ),
             max_loop_rounds=max(1, int(os.environ.get("HARNESS_MAX_LOOP_ROUNDS", "15"))),
             max_delegate_rounds=max(

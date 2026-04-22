@@ -2,30 +2,32 @@
 
 ## Current State
 
-A working LLM coding harness (~728 lines of Python) with:
-- MCP server with auto-discovered tools (FastMCP)
-- Orchestrator loop: plan → plan_review → output → output_review
-- SQLite conversation persistence
-- WebSocket + web UI with markdown rendering, streaming, thinking display
-- CLI interface with conversation management
-- File I/O tools (read/write with proposal-based approval)
-- Code review, thinking toggle, ping tools
+A modular local LLM harness with:
 
-The model is hardcoded to `qwen3-coder` via `ollama.AsyncClient`. There is no memory, no persistence abstraction, no sub-agent delegation, no voice interface.
+- MCP server with auto-discovered tools via `TOOLS = [...]`
+- Shared MCP-first loop under `harness/utils/loop/`
+- Inference abstraction and model-role registry under `harness/utils/inference/`
+- Orchestration policy, delegation, skill triggering, and early plan-state services under `harness/utils/orchestration/`
+- Typed thread/message persistence under `harness/utils/persistence/`
+- File-backed plan workspaces for orchestrated/global work
+- Web and Discord interfaces sharing the same core loop, with client-aware tool policy
+- Structured non-mutating write proposals for filesystem changes
+
+The architecture already moved away from the old monolithic `llm.py`-centered design. The roadmap below keeps the same ideas, but all future work should land on the modular seams that now exist.
 
 ## Build Order
 
-Following the stated principle: inference → tools → self-correction → persistent context → memory → orchestration → voice.
+Following the stated principle: inference → persistence → tools → self-correction → memory → orchestration → interface expansion.
 
 | Priority | Layer | Rationale |
 |----------|-------|-----------|
-| 1 | L1: Inference Abstraction | Everything depends on this — model-agnostic interface before adding features |
-| 2 | L5: Persistent Context Storage | Memory (L4) and orchestration (L6) both need a storage abstraction |
-| 3 | L2: Tool Use | Expand tool inventory (shell, web search, etc.) |
-| 4 | L3: Self-Correction | Harden validation and error recovery |
-| 5 | L4: Memory | Vector store, episodic memory, user model — requires L5 |
-| 6 | L6: Orchestration | Plan file versioning, sub-agents, text_tool — requires L1, L4, L5 |
-| 7 | L7: Interface | Voice (STT/TTS), mobile — polish layer, build last |
+| 1 | L1: Inference Abstraction | The abstraction exists, but all future provider/model-role work still depends on strengthening it |
+| 2 | L5: Persistent Context Storage | Memory and plan-first orchestration both depend on durable abstractions |
+| 3 | L2: Tool Use | Expand capability on top of the MCP-first tool and policy boundary |
+| 4 | L3: Self-Correction | Harden validation, verification, and recovery around the generic loop |
+| 5 | L4: Memory | Memory tiers depend on persistence and stable orchestration surfaces |
+| 6 | L6: Orchestration | Plan-file-first orchestration, richer sub-agents, and summarization depend on L1 and L5 |
+| 7 | L7: Interface | Voice/mobile can reuse the shared orchestrator once the core layers stabilize |
 
 ## Layer Dependencies
 
@@ -42,16 +44,16 @@ L3 (Self-Correction)  L4 (Memory)
                                     L7 (Interface)
 ```
 
-- L1 is foundational — model abstraction before anything else
-- L5 before L4 — memory needs a persistence backend
-- L5 before L6 — plan file versioning needs persistent storage
-- L1 before L6 — sub-agent model routing needs inference abstraction
-- L7 is independent but benefits from all other layers being stable
+- L1 is foundational even though the first abstraction pass already landed
+- L5 before L4 because memory needs a storage boundary
+- L5 before L6 because plan workspaces and file context are persistent state
+- L1 before L6 because richer delegation and verification need model-role routing
+- L7 benefits from all prior layers being stable and shared
 
 ## Open Questions
 
-- **Model selection**: Gemma 4 as orchestrator, Qwen 3 Coder for code tasks — is this fixed or should the system auto-select based on task type?
-- **Vector store choice**: What backs the memory layer? Local (ChromaDB, FAISS) or external?
-- **Plan file format**: The ctrl/in_use/diff versioning scheme — is this file-based or database-backed?
-- **Tool permissions**: Per-agent tool permission model — allowlist or denylist?
-- **Dangerous action confirmation**: Which tools require user approval beyond write_file? (shell, email, home automation)
+- **Model selection:** Fixed role mapping or dynamic selection based on task type?
+- **Vector store choice:** What backs long-term and episodic memory?
+- **Plan file format:** Markdown-first forever, or structured sidecar metadata plus richer schemas later?
+- **Tool permissions:** How far should per-client/per-agent allowlists go?
+- **Dangerous action confirmation:** Which future tools require approval beyond write proposals?

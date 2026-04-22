@@ -1,374 +1,102 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Harness</title>
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    font-family: monospace;
-    background: #1a1a1a;
-    color: #e0e0e0;
-    height: 100vh;
-    display: flex;
-  }
-
-  /* Sidebar */
-  #sidebar {
-    width: 220px;
-    background: #151515;
-    border-right: 1px solid #333;
-    display: flex;
-    flex-direction: column;
-    flex-shrink: 0;
-  }
-  #sidebar-header {
-    padding: 12px;
-    border-bottom: 1px solid #333;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 0.9em;
-    color: #aaa;
-  }
-  #new-chat {
-    background: #7aafff;
-    color: #1a1a1a;
-    border: none;
-    padding: 4px 10px;
-    font-family: monospace;
-    font-size: 0.85em;
-    cursor: pointer;
-    border-radius: 3px;
-  }
-  #new-chat:hover { background: #5a9aee; }
-  #convo-list {
-    flex: 1;
-    overflow-y: auto;
-    padding: 4px 0;
-  }
-  .convo-item {
-    padding: 8px 12px;
-    cursor: pointer;
-    font-size: 0.85em;
-    color: #999;
-    border-left: 3px solid transparent;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .convo-item:hover { background: #1e1e1e; color: #ccc; }
-  .convo-item.active { border-left-color: #7aafff; color: #e0e0e0; background: #1e1e1e; }
-  .convo-item .delete-btn {
-    background: none;
-    border: none;
-    color: #666;
-    cursor: pointer;
-    font-size: 0.9em;
-    padding: 0 4px;
-  }
-  .convo-item .delete-btn:hover { color: #e55; }
-
-  /* Main area */
-  #main {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
-  #messages {
-    flex: 1;
-    overflow-y: auto;
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .msg { padding: 6px 0; word-wrap: break-word; }
-  .msg.user { color: #7aafff; white-space: pre-wrap; }
-  .msg.user::before { content: "> "; }
-  .msg.message { color: #e0e0e0; }
-  .msg.message pre { background: #2a2a2a; padding: 10px; border-radius: 4px; overflow-x: auto; margin: 8px 0; }
-  .msg.message code { background: #2a2a2a; padding: 2px 4px; border-radius: 2px; font-size: 0.9em; }
-  .msg.message pre code { background: none; padding: 0; }
-  .msg.log { color: #888; font-style: italic; font-size: 0.85em; white-space: pre-wrap; }
-  .msg.system { color: #e8a63a; font-size: 0.85em; font-style: italic; }
-  .msg.thinking {
-    color: #a080d0;
-    font-size: 0.85em;
-    font-style: italic;
-    white-space: pre-wrap;
-    border-left: 2px solid #a080d0;
-    padding-left: 8px;
-    margin-bottom: 4px;
-    max-height: 150px;
-    overflow-y: auto;
-  }
-  .msg.streaming { white-space: pre-wrap; }
-  .msg.streaming::after {
-    content: '\2588';
-    animation: blink 0.7s step-end infinite;
-  }
-  @keyframes blink { 50% { opacity: 0; } }
-  #cooking {
-    padding: 8px 16px;
-    font-size: 0.85em;
-    color: #e8a63a;
-    display: none;
-  }
-  #cooking.active { display: block; }
-  #cooking .dots::after {
-    content: '';
-    animation: dots 1.5s steps(4, end) infinite;
-  }
-  @keyframes dots {
-    0% { content: ''; }
-    25% { content: '.'; }
-    50% { content: '..'; }
-    75% { content: '...'; }
-    100% { content: ''; }
-  }
-  #input-bar {
-    display: flex;
-    border-top: 1px solid #333;
-    padding: 12px;
-    background: #222;
-  }
-  #input {
-    flex: 1;
-    background: #2a2a2a;
-    border: 1px solid #444;
-    color: #e0e0e0;
-    font-family: monospace;
-    font-size: 14px;
-    padding: 8px 12px;
-    outline: none;
-  }
-  #input:focus { border-color: #7aafff; }
-  #send {
-    background: #7aafff;
-    color: #1a1a1a;
-    border: none;
-    padding: 8px 16px;
-    font-family: monospace;
-    font-size: 14px;
-    cursor: pointer;
-    margin-left: 8px;
-  }
-  #send:hover { background: #5a9aee; }
-  #status { padding: 4px 16px; font-size: 0.8em; color: #666; }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>T.ai Workspace</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="/app.js" defer></script>
 </head>
 <body>
+  <button id="panel-backdrop" class="panel-backdrop" aria-label="Close open panels"></button>
+  <div class="shell">
+    <aside id="sidebar" class="sidebar panel">
+      <div class="sidebar-header">
+        <div class="header-row">
+          <span class="eyebrow">forest workspace</span>
+          <button id="sidebar-close" class="drawer-close" title="Close conversations">×</button>
+        </div>
+        <h1 class="brand">T.ai Grove</h1>
+        <div class="sidebar-actions">
+          <button id="new-chat" class="btn">New Chat</button>
+          <button id="refresh-list" class="btn secondary">Refresh</button>
+        </div>
+      </div>
+      <div id="convo-list" class="conversations"></div>
+    </aside>
 
-<div id="sidebar">
-  <div id="sidebar-header">
-    <span>Conversations</span>
-    <button id="new-chat">+ New</button>
+    <main class="workspace panel">
+      <header class="workspace-header">
+        <div class="workspace-heading">
+          <div class="mobile-sidebar-action">
+            <button id="sidebar-toggle" class="icon-btn" title="Toggle conversations">≡</button>
+          </div>
+          <div>
+            <span class="eyebrow">nature-mode interface</span>
+            <h2 class="workspace-title">Rooted Conversation</h2>
+          </div>
+        </div>
+        <div class="status-cluster">
+          <span id="status-chip" class="chip"><strong>Socket</strong> disconnected</span>
+          <span id="cooking-chip" class="chip live"><strong>State</strong> idle</span>
+          <div class="mobile-inspector-action">
+            <button id="inspector-toggle" class="icon-btn" title="Toggle thinking trace" aria-label="Toggle thinking trace">
+              <span class="icon-glyph" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path d="M12 3.25a6.75 6.75 0 0 0-4.2 12.03c.58.46.95 1.1 1.06 1.82h6.28c.1-.73.48-1.36 1.06-1.82A6.75 6.75 0 0 0 12 3.25Z"></path>
+                  <path d="M9.4 18.75h5.2a2.6 2.6 0 0 1-5.2 0Z"></path>
+                </svg>
+              </span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <section class="chat-wrap">
+        <div id="messages" class="chat-feed"></div>
+      </section>
+
+      <section class="composer">
+        <div class="composer-shell">
+          <div class="composer-input-wrap">
+            <div id="slash-palette" class="palette">
+              <div class="palette-header">Slash commands and skills</div>
+              <div id="palette-list" class="palette-list"></div>
+            </div>
+            <textarea id="input" placeholder="Ask T.ai to plan, inspect, summarize, or delegate..."></textarea>
+            <div class="composer-hint">Type <span class="mono">/</span> for skills and commands. Shift + Enter for a newline.</div>
+          </div>
+          <button id="send" class="btn">Send</button>
+        </div>
+      </section>
+    </main>
+
+    <aside id="inspector" class="inspector panel">
+      <div class="inspector-header">
+        <div class="header-row">
+          <span class="eyebrow">live inspector</span>
+          <button id="inspector-close" class="drawer-close" title="Close inspector">×</button>
+        </div>
+        <h2 class="inspector-title">Canopy Trace</h2>
+      </div>
+
+      <div class="tab-row">
+        <button class="tab-btn active" data-tab="thinking">Thinking</button>
+        <button class="tab-btn" data-tab="delegates">Delegates</button>
+        <button class="tab-btn" data-tab="plan">Plan</button>
+        <button class="tab-btn" data-tab="logs">Logs</button>
+      </div>
+
+      <div class="tab-panels">
+        <section id="panel-thinking" class="tab-panel active"></section>
+        <section id="panel-delegates" class="tab-panel"></section>
+        <section id="panel-plan" class="tab-panel"></section>
+        <section id="panel-logs" class="tab-panel"></section>
+      </div>
+
+      <div class="inspector-footer">Live trace is visible only for this current browser session.</div>
+    </aside>
   </div>
-  <div id="convo-list"></div>
-</div>
-
-<div id="main">
-  <div id="status">disconnected</div>
-  <div id="messages"></div>
-  <div id="cooking"><span id="cooking-label">cooking</span><span class="dots"></span></div>
-  <div id="input-bar">
-    <input id="input" type="text" placeholder="Task..." autofocus />
-    <button id="send">Send</button>
-  </div>
-</div>
-
-<script>
-const messagesEl = document.getElementById('messages');
-const inputEl = document.getElementById('input');
-const sendEl = document.getElementById('send');
-const statusEl = document.getElementById('status');
-const cookingEl = document.getElementById('cooking');
-const convoListEl = document.getElementById('convo-list');
-const newChatEl = document.getElementById('new-chat');
-
-let ws;
-let streamDiv = null;
-let streamContent = "";
-let thinkingDiv = null;
-let thinkingContent = "";
-let runtimeConfig = null;
-
-async function loadRuntimeConfig() {
-  if (runtimeConfig) return runtimeConfig;
-  const response = await fetch('/runtime-config.json');
-  runtimeConfig = await response.json();
-  return runtimeConfig;
-}
-
-async function connect() {
-  const config = await loadRuntimeConfig();
-  ws = new WebSocket(config.ws_url);
-
-  ws.onopen = () => {
-    statusEl.textContent = 'connected';
-    statusEl.style.color = '#6a6';
-  };
-
-  ws.onclose = () => {
-    statusEl.textContent = 'disconnected — reconnecting...';
-    statusEl.style.color = '#a66';
-    cookingEl.classList.remove('active');
-    setTimeout(() => { connect(); }, 2000);
-  };
-
-  ws.onmessage = (e) => {
-    const data = JSON.parse(e.data);
-
-    if (data.type === 'status') {
-      const label = document.getElementById('cooking-label');
-      if (data.content === 'idle') {
-        cookingEl.classList.remove('active');
-      } else {
-        cookingEl.classList.add('active');
-        const labels = {
-          cooking: 'cooking',
-          planning: 'planning',
-          executing: 'executing',
-          reviewing: 'reviewing',
-        };
-        label.textContent = labels[data.content] || data.content;
-      }
-      return;
-    }
-
-    if (data.type === 'conversations') {
-      renderConversations(data.content, data.current);
-      return;
-    }
-
-    if (data.type === 'stream_start') {
-      streamContent = "";
-      thinkingContent = "";
-      thinkingDiv = document.createElement('div');
-      thinkingDiv.className = 'msg thinking';
-      thinkingDiv.style.display = 'none';
-      messagesEl.appendChild(thinkingDiv);
-      streamDiv = document.createElement('div');
-      streamDiv.className = 'msg message streaming';
-      messagesEl.appendChild(streamDiv);
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-      return;
-    }
-
-    if (data.type === 'stream_thinking') {
-      if (thinkingDiv) {
-        thinkingContent += data.content;
-        thinkingDiv.style.display = 'block';
-        thinkingDiv.textContent = thinkingContent;
-        messagesEl.scrollTop = messagesEl.scrollHeight;
-      }
-      return;
-    }
-
-    if (data.type === 'stream_token') {
-      if (streamDiv) {
-        streamContent += data.content;
-        streamDiv.textContent = streamContent;
-        messagesEl.scrollTop = messagesEl.scrollHeight;
-      }
-      return;
-    }
-
-    if (data.type === 'stream_end') {
-      if (streamDiv) {
-        if (streamContent) {
-          streamDiv.innerHTML = marked.parse(streamContent);
-          streamDiv.classList.remove('streaming');
-        } else {
-          streamDiv.remove();
-        }
-      }
-      if (thinkingDiv && !thinkingContent) {
-        thinkingDiv.remove();
-      }
-      streamDiv = null;
-      thinkingDiv = null;
-      return;
-    }
-
-    if (data.type === 'message') {
-      if (streamContent && data.content === streamContent) {
-        streamContent = "";
-        return;
-      }
-      streamContent = "";
-    }
-
-    addMessage(data.type, data.content);
-  };
-}
-
-function renderConversations(convos, currentId) {
-  convoListEl.innerHTML = '';
-  convos.forEach(c => {
-    const div = document.createElement('div');
-    div.className = `convo-item${c.id === currentId ? ' active' : ''}`;
-
-    const nameSpan = document.createElement('span');
-    nameSpan.textContent = `${c.name} (${c.message_count})`;
-    nameSpan.addEventListener('click', () => {
-      messagesEl.innerHTML = '';
-      ws.send(JSON.stringify({ command: 'load', id: c.id }));
-    });
-
-    const delBtn = document.createElement('button');
-    delBtn.className = 'delete-btn';
-    delBtn.textContent = 'x';
-    delBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      ws.send(JSON.stringify({ command: 'delete', id: c.id }));
-    });
-
-    div.appendChild(nameSpan);
-    div.appendChild(delBtn);
-    convoListEl.appendChild(div);
-  });
-}
-
-function addMessage(type, content) {
-  const div = document.createElement('div');
-  div.className = `msg ${type}`;
-
-  if (type === 'message') {
-    div.innerHTML = marked.parse(content);
-  } else {
-    div.textContent = content;
-  }
-
-  messagesEl.appendChild(div);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
-}
-
-function send() {
-  const text = inputEl.value.trim();
-  if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
-
-  addMessage('user', text);
-  ws.send(JSON.stringify({ content: text }));
-  inputEl.value = '';
-}
-
-newChatEl.addEventListener('click', () => {
-  messagesEl.innerHTML = '';
-  ws.send(JSON.stringify({ command: 'new' }));
-});
-
-sendEl.addEventListener('click', send);
-inputEl.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') send();
-});
-
-connect();
-</script>
-
 </body>
 </html>

@@ -3,5 +3,7 @@ __pycache__/
 .venv/
 *.log
 *.db
+plan_store/
+*/plan_store/
 node_modules/
 .env

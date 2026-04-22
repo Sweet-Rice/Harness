@@ -1,67 +1,86 @@
 # Layer 5: Persistent Context Storage
 
 ## Purpose
-An abstraction layer for storing and retrieving context that persists across sessions, conversations, and agent invocations. The abstraction matters because the underlying storage will change — flat files, SQLite, vector store, something purpose-built. Nothing above this layer should know or care what's underneath.
+
+An abstraction layer for storing and retrieving context across sessions, conversations, and orchestrated runs. The backend will change; nothing above this layer should need to care.
 
 ## Status
+
 PARTIAL
 
 ## What Exists
-- **ConversationManager** in `harness/utils/context.py` (120 lines):
-  - SQLite backend at `harness/conversations.db`
-  - Two tables: `conversations` (id, name, created_at, updated_at) and `messages` (id, conversation_id, role, content, timestamp)
-  - Methods: `new()`, `load()`, `save()`, `list()`, `delete()`, `rename()`
-  - Used by both CLI (`harness/harness.py`) and web server (`harness/web/server.py`)
-- **Thinking log** in `harness/utils/logger.py` — appends to `thinking.log` file (flat file, no abstraction)
+
+### Typed Conversation Persistence
+
+- `harness/utils/persistence/base.py`
+  Conversation repository protocol plus plan-store protocol
+- `harness/utils/persistence/sqlite_conversations.py`
+  SQLite-backed typed thread/message persistence
+- `harness/utils/context/`
+  `ConversationManager`, typed thread/message models, and compatibility loading/saving
+
+The current thread model already distinguishes:
+- `global_thread`
+- `client_scratch`
+
+and persists:
+- message role/content
+- message type
+- tool-call payloads
+- tool/tool-name metadata
+- source/client identity
+
+### Plan Store
+
+- `harness/utils/persistence/plan_store.py`
+  File-backed `ctrl` / `in_use` / diff-log workspace storage for orchestrated work
 
 ## What's Planned
 
-### Abstract Persistence Interface
-- **Read/write/query/delete** — the four operations. Everything that needs persistence goes through this interface.
-  - Location: `harness/utils/persistence.py` (new)
-  - Depends on: nothing
-- **Multiple storage backends**: Start with SQLite (already exists), add flat file and vector store backends as needed.
-  - Location: backend implementations under `harness/utils/backends/` (new)
-  - Depends on: abstract interface
+### Broader Storage Boundary
+
+- Keep expanding persistence behind stable interfaces rather than ad hoc SQL or raw file access in callers
+- Add additional backends later if needed
 
 ### Plan File Versioning
-The t.ai orchestration model uses plan files with three copies:
-- **ctrl**: The plan file before any changes. Immutable snapshot. The baseline.
-- **in_use**: The live copy that changes dynamically as agents iterate.
-- **appended diff**: A log of diffs from each iteration (ctrl vs in_use). Full auditability and rollback.
-  - Location: `harness/utils/plan_store.py` (new)
-  - Depends on: abstract persistence interface
+
+The core orchestration model still uses:
+- **ctrl** — immutable baseline snapshot
+- **in_use** — live copy
+- **appended diff** — audit log of changes over time
+
+The first file-backed implementation now exists; future work should deepen it instead of replacing it with chat-history inference.
 
 ### Context File Tree
-A persistent structure that stores context on files — what the system knows about the project it's operating on. Injected into and modified by agents.
-  - Location: `harness/utils/file_context.py` (new)
-  - Depends on: abstract persistence interface
 
-### Decouple Conversation Storage
-Refactor `ConversationManager` to use the abstract persistence interface instead of raw SQLite.
-  - Location: refactor `harness/utils/context.py`
-  - Depends on: abstract interface
+A persistent structure that stores what the system knows about project files and technical context.
+
+### Persistence For Memory
+
+Memory tiers in L4 should reuse this persistence boundary rather than inventing their own storage path.
 
 ## Architecture
+
 ```
-Memory (L4)     Orchestration (L6)     Conversations     File Context
-  │                   │                     │                 │
-  ▼                   ▼                     ▼                 ▼
-┌─────────────────────────────────────────────────────────────────┐
-│              Persistent Context Storage (abstract)              │
-│         read()  write()  query()  delete()                      │
-└─────────────────────────────────────────────────────────────────┘
-  │                   │                     │
-  ▼                   ▼                     ▼
-SQLite Backend    File Backend       Vector Store Backend
-(conversations)   (plan files)       (memory embeddings)
+Conversations / Threads     Plan Store     File Context     Memory
+        │                      │               │              │
+        ▼                      ▼               ▼              ▼
+┌───────────────────────────────────────────────────────────────┐
+│                 Persistent Context Storage                    │
+└───────────────────────────────────────────────────────────────┘
+        │                      │               │
+        ▼                      ▼               ▼
+  SQLite backend         File-backed plans   Future backends
 ```
 
 ## Key Decisions
-- **SQLite as initial backend**: Already working for conversations. Proven, zero-config, single-file.
-- **Abstraction before expansion**: Build the interface before adding new storage types. Refactor ConversationManager to prove the abstraction works.
+
+- Typed thread/message persistence stays separate from plan-state persistence
+- Plan workspaces are file-backed because that best matches the ctrl/in_use/diff design
+- `ConversationManager` remains a compatibility surface, not the canonical owner of orchestrated plan state
 
 ## Open Questions
-- Should plan file versioning be file-based (three actual files on disk) or database-backed (versions as rows)?
-- How does the context file tree get populated — static analysis, agent observation, or both?
-- What's the query interface for the vector store backend — raw similarity search or structured queries?
+
+- Should plan workspaces gain SQLite indexing or stay purely file-driven?
+- How should file context be populated: static analysis, agent observation, or both?
+- What query surface will memory backends need from persistence?

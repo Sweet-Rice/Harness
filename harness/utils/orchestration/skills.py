@@ -19,6 +19,13 @@ def available_skill_names() -> tuple[str, ...]:
     return tuple(SKILL_DESCRIPTIONS)
 
 
+def available_skill_entries() -> list[dict[str, str]]:
+    return [
+        {"name": name, "description": description}
+        for name, description in SKILL_DESCRIPTIONS.items()
+    ]
+
+
 def skill_trigger_tool() -> dict:
     return {
         "type": "function",
