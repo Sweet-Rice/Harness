@@ -1,13 +1,13 @@
 from harness.utils.context.conversation_state import ConversationState
 from harness.utils.inference import get_default_registry
 from harness.utils.loop.runner import run_conversation
-from harness.utils.orchestration.policy import build_default_policy
+from harness.utils.orchestration.policy import build_policy
 
 
-async def loop(client, messages, on_event=None):
+async def loop(client, messages, on_event=None, *, mode="orchestrated"):
     state = ConversationState.from_messages(messages)
     registry = get_default_registry()
-    policy = build_default_policy()
+    policy = build_policy(mode)
     result = await run_conversation(
         client,
         state,

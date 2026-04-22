@@ -3,23 +3,24 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import sys
 import time
 from dataclasses import dataclass, field
 
 import discord
 from discord.ext import commands
+from fastmcp import Client
 
 from harness.utils.config import SETTINGS
 from harness.utils.context import ConversationManager
 from harness.utils.inference import get_default_registry
 from harness.utils.orchestration.prompts import get_chat_system_prompt
+from harness.utils.llm import loop
 from harness.discord.renderer import TextRenderer
 
 
-TOKEN = os.environ.get("HARNESS_DISCORD_TOKEN", "")
-MODEL = get_default_registry().model_for("chat")
+TOKEN = SETTINGS.discord_token
+MODEL = get_default_registry().model_for("orchestrator")
 MAX_CONTEXT_MESSAGES = SETTINGS.discord_max_context_messages
 THINK = SETTINGS.think
 SYSTEM_MESSAGE = get_chat_system_prompt()
@@ -28,7 +29,9 @@ SYSTEM_MESSAGE = get_chat_system_prompt()
 @dataclass
 class Session:
     ctx: ConversationManager
-    messages: list[dict] = field(default_factory=lambda: [SYSTEM_MESSAGE.copy()])
+    thread_id: str
+    mode: str
+    messages: list[dict] = field(default_factory=list)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
@@ -39,8 +42,18 @@ def get_session(channel_id: int) -> Session:
     """Get or create a session for a Discord channel."""
     if channel_id not in sessions:
         ctx = ConversationManager()
-        ctx.new(f"discord-{channel_id}")
-        sessions[channel_id] = Session(ctx=ctx)
+        thread = ctx.get_or_create_client_scratch(
+            source="discord",
+            client_id=str(channel_id),
+            name=f"discord-{channel_id}",
+            mode="orchestrated",
+        )
+        sessions[channel_id] = Session(
+            ctx=ctx,
+            thread_id=thread.thread.id,
+            mode=thread.thread.mode,
+            messages=thread.messages,
+        )
     return sessions[channel_id]
 
 
@@ -55,7 +68,7 @@ MAX_SUMMARY_COUNT = 500
 intents = discord.Intents.default()
 intents.message_content = True
 
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(command_prefix=SETTINGS.discord_command_prefix, intents=intents)
 
 
 async def _fetch_history(channel: discord.abc.Messageable, count: int) -> str:
@@ -141,7 +154,7 @@ async def on_message(message: discord.Message):
     session = get_session(message.channel.id)
 
     async with session.lock, message.channel.typing():
-        renderer = TextRenderer()
+        renderer = TextRenderer(edit_interval=SETTINGS.discord_edit_interval)
         await renderer.start(message.channel)
 
         try:
@@ -163,10 +176,23 @@ async def on_message(message: discord.Message):
             else:
                 # Normal chat
                 session.messages.append({"role": "user", "content": user_text})
-                full_content = await _stream_chat(session.messages, renderer)
-                session.messages.append({"role": "assistant", "content": full_content})
+                async def on_event(event_type, content):
+                    if event_type == "stream_thinking":
+                        await renderer.thinking(content)
+                    elif event_type == "stream_token":
+                        await renderer.token(content)
+
+                async with Client(SETTINGS.mcp_url) as client:
+                    full_content = await loop(
+                        client,
+                        session.messages,
+                        on_event=on_event,
+                        mode=session.mode,
+                    )
                 session.messages = _window_messages(session.messages)
-                session.ctx.save(session.ctx.current, session.messages)
+                session.thread_id = session.ctx.current or session.thread_id
+                session.ctx.save(session.thread_id, session.messages)
+                await renderer.finish()
 
         except Exception as exc:
             await renderer.finish()

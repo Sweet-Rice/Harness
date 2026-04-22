@@ -5,10 +5,15 @@ async def dispatch_tool_call(client, tool_call, handlers=None, on_event=None) ->
     handlers = handlers or {}
     name, args = extract_tool_call(tool_call)
 
-    if name in handlers:
-        result_text = await handlers[name](client=client, args=args, on_event=on_event)
-    else:
-        result = await client.call_tool(name, args)
-        result_text = flatten_tool_result(result)
+    try:
+        if name in handlers:
+            result_text = await handlers[name](client=client, args=args, on_event=on_event)
+        else:
+            result = await client.call_tool(name, args)
+            result_text = flatten_tool_result(result)
+    except Exception as exc:
+        result_text = f"Error calling tool '{name}': {exc}"
+        if on_event:
+            await on_event("log", result_text)
 
     return name, args, result_text

@@ -2,20 +2,46 @@ from typing import Protocol
 
 
 class ConversationRepository(Protocol):
-    def create_conversation(self, name: str) -> str:
+    def create_thread(
+        self,
+        name: str,
+        *,
+        thread_type: str,
+        mode: str,
+        source: str | None,
+        client_id: str | None,
+    ):
         ...
 
-    def list_conversations(self) -> list[dict]:
+    def list_threads(
+        self,
+        *,
+        source: str | None = None,
+        client_id: str | None = None,
+        include_global: bool = True,
+    ):
         ...
 
-    def load_messages(self, conversation_id: str) -> list[dict] | None:
+    def get_thread(self, thread_id: str):
         ...
 
-    def save_messages(self, conversation_id: str, messages: list[dict]) -> None:
+    def find_thread_by_identity(
+        self,
+        *,
+        thread_type: str,
+        source: str | None,
+        client_id: str | None,
+    ):
         ...
 
-    def delete_conversation(self, conversation_id: str) -> None:
+    def load_thread_messages(self, thread_id: str):
         ...
 
-    def rename_conversation(self, conversation_id: str, name: str) -> None:
+    def save_thread_messages(self, thread_id: str, messages) -> None:
+        ...
+
+    def delete_thread(self, thread_id: str) -> None:
+        ...
+
+    def rename_thread(self, thread_id: str, name: str) -> None:
         ...

@@ -9,7 +9,7 @@ This package owns durable storage concerns. The rest of the harness should treat
 - `base.py`
   Repository protocol describing the conversation-storage contract.
 - `sqlite_conversations.py`
-  SQLite-backed implementation for conversations and message records, including message metadata such as tool-call payloads.
+  SQLite-backed implementation for typed threads and typed message records, including thread type/mode, source identity, and tool-call payloads.
 
 ## Relationship to adjacent directories
 

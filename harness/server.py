@@ -3,6 +3,8 @@ from fastmcp import FastMCP
 import importlib
 import pkgutil
 
+from harness.utils.config import SETTINGS
+
 #local imports
 import harness.tools 
 
@@ -21,4 +23,8 @@ for finder, name, ispkg in pkgutil.iter_modules(harness.tools.__path__):
         mcp.tool()(func)
 
 if __name__=="__main__":
-    mcp.run(transport="http", host="0.0.0.0", port=8000)
+    mcp.run(
+        transport="http",
+        host=SETTINGS.mcp_host,
+        port=SETTINGS.mcp_port,
+    )

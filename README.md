@@ -4,6 +4,19 @@ Harness is a local LLM harness built around an MCP-first execution loop. The mai
 
 The current architecture is organized so the public entrypoints stay thin and the real behavior lives in focused subdirectories. The goal is to make future work land in the right place without turning the main loop into a dumping ground.
 
+## Deployment Note
+
+The MCP server is no longer assumed to live on the same device as the web UI or Discord bot. The MCP runtime location is configured through shared settings:
+
+- `HARNESS_MCP_HOST`
+  Host/interface the MCP server binds to when you run `python -m harness.server`
+- `HARNESS_MCP_PORT`
+  Port the MCP server listens on
+- `HARNESS_MCP_URL`
+  Full MCP endpoint used by clients such as the web server and Discord bot
+
+If you want MCP to run on the same box as Ollama, set `HARNESS_MCP_URL` in the clients to the Ollama server machine, for example `http://your-ollama-host:8000/mcp`.
+
 ## Broad Directory Map
 
 ### `harness/`
@@ -20,8 +33,8 @@ The main Python package. This is the root of the runtime application.
   Web interface server and static frontend.
 - `discord/`
   Discord bot interface and renderer.
-- `conversations.db`
-  SQLite conversation storage used by the current persistence layer.
+- `jarvis.db`
+  SQLite thread/message storage used by the current persistence layer.
 
 ### `harness/tools/`
 
@@ -196,7 +209,7 @@ Conversation state and durable storage are now split on purpose.
 
 #### In-memory state
 
-`harness/utils/context/` owns the compatibility `ConversationManager` surface and the `ConversationState` namespace. This is the layer that callers use when they need to load, save, or carry around a conversation in process.
+`harness/utils/context/` owns the compatibility `ConversationManager` surface, thread records, and the `ConversationState` namespace. This is the layer that callers use when they need to load, save, or carry around a thread in process.
 
 #### Durable storage
 
@@ -205,9 +218,9 @@ Conversation state and durable storage are now split on purpose.
 - `base.py`
   Defines the repository contract.
 - `sqlite_conversations.py`
-  Implements the SQLite-backed repository.
+  Implements the SQLite-backed repository for typed threads and message records.
 
-This repository stores more than plain message text. It also keeps message metadata, including tool-call payloads, so conversations can round-trip more faithfully than before.
+This repository stores typed threads and typed message records. Message metadata, source fields, tool-call payloads, and thread type/mode all persist explicitly so different clients can share global threads while still keeping client-local scratch sessions separate.
 
 The intended separation is:
 
@@ -248,14 +261,14 @@ Discord still has some interface-specific behavior, especially around rendering 
 ### Web request flow
 
 1. Browser sends a message over WebSocket.
-2. `harness/web/server.py` appends the user message to the current conversation.
+2. `harness/web/server.py` appends the user message to the current thread.
 3. It calls `harness.utils.llm.loop(...)`.
 4. `llm.py` builds the shared state and default orchestration policy, then forwards into `loop/runner.py`.
 5. `runner.py` asks `tool_registry.py` for the final model-visible tool list.
 6. The inference client streams the model response.
 7. If tool calls are returned, `tool_dispatch.py` routes them through MCP or orchestration handlers.
 8. Results are appended to state and the loop continues.
-9. When a final assistant response is produced, the interface receives streaming events and saves the updated conversation.
+9. When a final assistant response is produced, the interface receives streaming events and saves the updated thread.
 
 ### Delegation flow
 

@@ -195,9 +195,18 @@ let streamDiv = null;
 let streamContent = "";
 let thinkingDiv = null;
 let thinkingContent = "";
+let runtimeConfig = null;
 
-function connect() {
-  ws = new WebSocket(`ws://${location.hostname}:8766`);
+async function loadRuntimeConfig() {
+  if (runtimeConfig) return runtimeConfig;
+  const response = await fetch('/runtime-config.json');
+  runtimeConfig = await response.json();
+  return runtimeConfig;
+}
+
+async function connect() {
+  const config = await loadRuntimeConfig();
+  ws = new WebSocket(config.ws_url);
 
   ws.onopen = () => {
     statusEl.textContent = 'connected';
@@ -208,7 +217,7 @@ function connect() {
     statusEl.textContent = 'disconnected — reconnecting...';
     statusEl.style.color = '#a66';
     cookingEl.classList.remove('active');
-    setTimeout(connect, 2000);
+    setTimeout(() => { connect(); }, 2000);
   };
 
   ws.onmessage = (e) => {

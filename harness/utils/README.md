@@ -18,7 +18,7 @@ This directory is the shared utility layer for the harness. The goal of the rece
 ## Adjacent subdirectories
 
 - `context/`
-  In-memory conversation state and the compatibility `ConversationManager` surface.
+  In-memory conversation state, typed thread/message records, and the compatibility `ConversationManager` surface.
 - `inference/`
   Provider-facing model access. This is the only place that should know how to talk to Ollama or any future backend.
 - `loop/`
@@ -26,7 +26,7 @@ This directory is the shared utility layer for the harness. The goal of the rece
 - `orchestration/`
   Harness-specific policy such as prompts, delegation, and default loop behavior.
 - `persistence/`
-  Storage interfaces and SQLite-backed conversation persistence.
+  Storage interfaces and SQLite-backed thread/message persistence.
 - `providers/`
   Legacy placeholder from before the refactor. New provider work should go in `inference/`.
 

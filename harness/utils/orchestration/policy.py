@@ -4,7 +4,7 @@ from harness.utils.config import SETTINGS
 from harness.utils.inference import get_default_registry
 
 from .delegation import build_delegate_handler, delegate_agent_tool
-from .prompts import get_orchestrator_system_prompt
+from .prompts import get_chat_system_prompt, get_orchestrator_system_prompt
 
 
 @dataclass
@@ -18,8 +18,17 @@ class OrchestrationPolicy:
     special_handlers: dict = field(default_factory=dict)
 
 
-def build_default_policy():
+def build_policy(mode: str = "orchestrated"):
     registry = get_default_registry()
+    if mode == "chat":
+        return OrchestrationPolicy(
+            registry=registry,
+            model_role="chat",
+            system_prompt=get_chat_system_prompt(),
+            max_rounds=SETTINGS.max_loop_rounds,
+            think=SETTINGS.think,
+        )
+
     delegate_tool = delegate_agent_tool()
     delegate_handler = build_delegate_handler(registry, SETTINGS)
     return OrchestrationPolicy(
@@ -27,6 +36,11 @@ def build_default_policy():
         model_role="orchestrator",
         system_prompt=get_orchestrator_system_prompt(),
         max_rounds=SETTINGS.max_loop_rounds,
+        think=SETTINGS.think,
         special_tools=[delegate_tool],
         special_handlers={"delegate_agent": delegate_handler},
     )
+
+
+def build_default_policy():
+    return build_policy("orchestrated")

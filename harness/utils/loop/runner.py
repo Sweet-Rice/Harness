@@ -17,7 +17,7 @@ async def run_conversation(client, state, policy, inference, on_event=None):
         await emitter.stream_start()
         async for chunk in inference.stream_chat(
             model=model,
-            messages=state.to_messages(),
+            messages=state.to_model_messages(),
             tools=tools or None,
             think=policy.think,
         ):
@@ -45,4 +45,7 @@ async def run_conversation(client, state, policy, inference, on_event=None):
             await emitter.message(full_content)
             return full_content
 
-    return ""
+    final_message = "Error: maximum tool rounds reached before the model produced a final response."
+    state.append_message("assistant", final_message)
+    await emitter.message(final_message)
+    return final_message
