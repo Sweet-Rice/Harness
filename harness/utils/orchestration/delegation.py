@@ -50,12 +50,15 @@ class RestrictedToolClient:
         return await self._client.call_tool(name, args)
 
 
-def build_delegate_handler(registry, settings):
+def build_delegate_handler(registry, settings, *, allowed_tool_names=None):
     inference = registry.get_client()
 
     async def handle_delegate(client, args, on_event=None):
         prompt = args["prompt"]
         tool_names = args["tools"]
+        if allowed_tool_names is not None:
+            allowed = set(allowed_tool_names)
+            tool_names = [name for name in tool_names if name in allowed]
         state = ConversationState.from_messages(
             [
                 get_delegate_system_prompt(),

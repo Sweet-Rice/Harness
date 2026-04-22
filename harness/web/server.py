@@ -11,6 +11,7 @@ from fastmcp import Client
 from harness.utils.config import SETTINGS
 from harness.utils.llm import loop
 from harness.utils.context import ConversationManager
+from harness.utils.orchestration.skills import build_skill_payload, execute_skill
 
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -117,6 +118,23 @@ async def handle_ws(websocket):
                     ctx.rename(data.get("id", ""), data.get("name", ""))
                     await send_conversations()
 
+                elif cmd == "skill":
+                    skill_name = data.get("skill_name", "").strip()
+                    extra_payload = data.get("payload", "").strip()
+                    if not skill_name:
+                        await send("system", "Usage: /skill <skill_name> [extra instructions]")
+                        continue
+                    transcript = build_skill_payload(skill_name, messages)
+                    if extra_payload:
+                        transcript = f"{transcript}\n\n[extra_instructions] {extra_payload}".strip()
+                    result = await execute_skill(
+                        skill_name,
+                        transcript,
+                        client_type="web",
+                        registry=None,
+                    )
+                    await send("message", result or "Skill returned no output.")
+
                 continue
 
             # Handle chat messages
@@ -145,6 +163,24 @@ async def handle_ws(websocket):
                 elif cmd == "/list":
                     await send_conversations()
                     continue
+                elif cmd == "/skill":
+                    skill_parts = arg.split(maxsplit=1)
+                    skill_name = skill_parts[0].strip() if skill_parts else ""
+                    extra_payload = skill_parts[1].strip() if len(skill_parts) > 1 else ""
+                    if not skill_name:
+                        await send("system", "Usage: /skill <skill_name> [extra instructions]")
+                        continue
+                    transcript = build_skill_payload(skill_name, messages)
+                    if extra_payload:
+                        transcript = f"{transcript}\n\n[extra_instructions] {extra_payload}".strip()
+                    result = await execute_skill(
+                        skill_name,
+                        transcript,
+                        client_type="web",
+                        registry=None,
+                    )
+                    await send("message", result or "Skill returned no output.")
+                    continue
 
             ensure_current_conversation()
             messages.append({"role": "user", "content": user_text})
@@ -152,7 +188,7 @@ async def handle_ws(websocket):
             async def on_event(event_type, content):
                 await websocket.send(json.dumps({"type": event_type, "content": content}))
 
-            await loop(client, messages, on_event=on_event, mode="orchestrated")
+            await loop(client, messages, on_event=on_event, mode="orchestrated", client_type="web")
             if ctx.current:
                 ctx.save(ctx.current, messages)
 

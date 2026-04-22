@@ -7,7 +7,11 @@ from .tool_registry import list_tools
 async def run_conversation(client, state, policy, inference, on_event=None):
     emitter = EventEmitter(on_event)
     state.ensure_system_message(policy.system_prompt)
-    tools = await list_tools(client, policy_tools=policy.special_tools)
+    tools = await list_tools(
+        client,
+        policy_tools=policy.special_tools,
+        allowed_tool_names=policy.allowed_mcp_tools,
+    )
     model = policy.registry.model_for(policy.model_role)
 
     for _ in range(policy.max_rounds):

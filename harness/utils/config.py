@@ -24,6 +24,10 @@ def parse_think_setting(value: str) -> bool | str:
     return value.strip()
 
 
+def parse_csv_setting(value: str) -> tuple[str, ...]:
+    return tuple(part.strip() for part in value.split(",") if part.strip())
+
+
 @dataclass(frozen=True)
 class HarnessConfig:
     # Model/provider configuration.
@@ -57,6 +61,7 @@ class HarnessConfig:
     discord_token: str = ""
     discord_command_prefix: str = "!"
     discord_edit_interval: float = 2.0
+    discord_tool_allowlist: tuple[str, ...] = ()
 
     @classmethod
     def from_env(cls) -> "HarnessConfig":
@@ -115,6 +120,9 @@ class HarnessConfig:
             discord_token=os.environ.get("HARNESS_DISCORD_TOKEN", ""),
             discord_command_prefix=os.environ.get("HARNESS_DISCORD_COMMAND_PREFIX", "!"),
             discord_edit_interval=float(os.environ.get("HARNESS_DISCORD_EDIT_INTERVAL", "2.0")),
+            discord_tool_allowlist=parse_csv_setting(
+                os.environ.get("HARNESS_DISCORD_TOOL_ALLOWLIST", "")
+            ),
         )
 
 

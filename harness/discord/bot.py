@@ -8,22 +8,24 @@ import time
 from dataclasses import dataclass, field
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 from fastmcp import Client
 
 from harness.utils.config import SETTINGS
 from harness.utils.context import ConversationManager
 from harness.utils.inference import get_default_registry
-from harness.utils.orchestration.prompts import get_chat_system_prompt
 from harness.utils.llm import loop
+from harness.utils.orchestration.skills import (
+    available_skill_names,
+    build_skill_payload,
+    execute_skill,
+)
 from harness.discord.renderer import TextRenderer
 
 
 TOKEN = SETTINGS.discord_token
-MODEL = get_default_registry().model_for("orchestrator")
 MAX_CONTEXT_MESSAGES = SETTINGS.discord_max_context_messages
-THINK = SETTINGS.think
-SYSTEM_MESSAGE = get_chat_system_prompt()
 
 
 @dataclass
@@ -62,35 +64,10 @@ def _strip_mention(content: str, bot_id: int) -> str:
     return content.replace(f"<@{bot_id}>", "").strip()
 
 
-DEFAULT_SUMMARY_COUNT = 50
-MAX_SUMMARY_COUNT = 500
-
 intents = discord.Intents.default()
 intents.message_content = True
 
 bot = commands.Bot(command_prefix=SETTINGS.discord_command_prefix, intents=intents)
-
-
-async def _fetch_history(channel: discord.abc.Messageable, count: int) -> str:
-    """Fetch recent messages from a channel and format them for the LLM."""
-    msgs: list[str] = []
-    async for msg in channel.history(limit=count, oldest_first=False):
-        if msg.author.bot:
-            continue
-        timestamp = msg.created_at.strftime("%Y-%m-%d %H:%M")
-        msgs.append(f"[{timestamp}] {msg.author.display_name}: {msg.content}")
-    msgs.reverse()
-    return "\n".join(msgs)
-
-
-def _parse_summarize(text: str) -> int | None:
-    """If text is a summarize request, return the message count.  Else None."""
-    parts = text.strip().split()
-    if not parts or parts[0].lower() != "summarize":
-        return None
-    if len(parts) >= 2 and parts[1].isdigit():
-        return min(int(parts[1]), MAX_SUMMARY_COUNT)
-    return DEFAULT_SUMMARY_COUNT
 
 
 def _window_messages(messages: list[dict]) -> list[dict]:
@@ -104,34 +81,79 @@ def _window_messages(messages: list[dict]) -> list[dict]:
     return [*system_messages, *non_system_messages[-keep_count:]]
 
 
-async def _stream_chat(messages: list[dict], renderer: TextRenderer) -> str:
-    """Send messages to Ollama with streaming and return the full response."""
-    start = time.perf_counter()
-    chat_messages = [
-        {"role": m["role"], "content": m["content"]}
-        for m in _window_messages(messages)
-    ]
-    inference = get_default_registry().get_client()
-    async for chunk in inference.stream_chat(
-        model=MODEL,
-        messages=chat_messages,
-        think=THINK,
-    ):
-        if chunk.thinking:
-            await renderer.thinking(chunk.thinking)
-        if chunk.content:
-            await renderer.token(chunk.content)
-    elapsed = time.perf_counter() - start
-    print(
-        f"[DEBUG] Ollama stream finished in {elapsed:.2f}s "
-        f"with {len(chat_messages)} messages"
-    )
-    return await renderer.finish()
+def _persist_session(session: Session):
+    session.messages = _window_messages(session.messages)
+    session.thread_id = session.ctx.current or session.thread_id
+    session.ctx.save(session.thread_id, session.messages)
 
 
 @bot.event
 async def on_ready():
-    print(f"Harness bot online as {bot.user}  (model: {MODEL})")
+    await bot.tree.sync()
+    print(f"Harness bot online as {bot.user}")
+
+
+@bot.tree.command(name="skill", description="Run an explicit Harness skill in this channel.")
+@app_commands.describe(
+    skill_name="The skill to run",
+    payload="Optional extra instructions for the skill",
+)
+async def skill_command(
+    interaction: discord.Interaction,
+    skill_name: str,
+    payload: str = "",
+):
+    await interaction.response.defer(thinking=True)
+
+    session = get_session(interaction.channel_id)
+    transcript = build_skill_payload(skill_name, session.messages)
+    if payload.strip():
+        transcript = f"{transcript}\n\n[extra_instructions] {payload.strip()}".strip()
+
+    result = await execute_skill(
+        skill_name,
+        transcript,
+        client_type="discord",
+        registry=get_default_registry(),
+    )
+    await interaction.followup.send(result or "Skill returned no output.")
+
+
+@skill_command.autocomplete("skill_name")
+async def autocomplete_skill_name(
+    interaction: discord.Interaction,
+    current: str,
+):
+    del interaction
+    current_lower = current.lower()
+    return [
+        app_commands.Choice(name=name, value=name)
+        for name in available_skill_names()
+        if current_lower in name.lower()
+    ][:25]
+
+
+@bot.tree.command(
+    name="thread_new",
+    description="Start a new local Discord scratch thread for this channel.",
+)
+async def thread_new_command(interaction: discord.Interaction):
+    await interaction.response.defer(thinking=False)
+    ctx = ConversationManager()
+    thread = ctx.create_thread(
+        name=f"discord-{interaction.channel_id}",
+        thread_type="client_scratch",
+        mode="orchestrated",
+        source="discord",
+        client_id=str(interaction.channel_id),
+    )
+    sessions[interaction.channel_id] = Session(
+        ctx=ctx,
+        thread_id=thread.id,
+        mode=thread.mode,
+        messages=[],
+    )
+    await interaction.followup.send(f"Started a new Discord scratch thread: `{thread.id}`")
 
 
 @bot.event
@@ -150,7 +172,6 @@ async def on_message(message: discord.Message):
     if not user_text:
         return
 
-    summary_count = _parse_summarize(user_text)
     session = get_session(message.channel.id)
 
     async with session.lock, message.channel.typing():
@@ -158,59 +179,36 @@ async def on_message(message: discord.Message):
         await renderer.start(message.channel)
 
         try:
-            if summary_count is not None:
-                # Summarize: fetch history and ask the LLM to summarize it
-                history = await _fetch_history(message.channel, summary_count)
-                prompt = (
-                    f"Summarize the following Discord conversation "
-                    f"({summary_count} most recent messages). "
-                    f"Highlight key topics, decisions, and action items.\n\n"
-                    f"{history}"
-                )
-                summary_messages = [
-                    SYSTEM_MESSAGE.copy(),
-                    {"role": "user", "content": prompt},
-                ]
-                full_content = await _stream_chat(summary_messages, renderer)
-                # Don't persist summarize requests into the ongoing conversation
-            else:
-                # Normal chat
-                session.messages.append({"role": "user", "content": user_text})
-                async def on_event(event_type, content):
-                    if event_type == "stream_thinking":
-                        await renderer.thinking(content)
-                    elif event_type == "stream_token":
-                        await renderer.token(content)
+            session.messages.append({"role": "user", "content": user_text})
 
-                async with Client(SETTINGS.mcp_url) as client:
-                    full_content = await loop(
-                        client,
-                        session.messages,
-                        on_event=on_event,
-                        mode=session.mode,
-                    )
-                session.messages = _window_messages(session.messages)
-                session.thread_id = session.ctx.current or session.thread_id
-                session.ctx.save(session.thread_id, session.messages)
-                await renderer.finish()
+            async def on_event(event_type, content):
+                if event_type == "stream_thinking":
+                    await renderer.thinking(content)
+                elif event_type == "stream_token":
+                    await renderer.token(content)
+
+            async with Client(SETTINGS.mcp_url) as client:
+                await loop(
+                    client,
+                    session.messages,
+                    on_event=on_event,
+                    mode=session.mode,
+                    client_type="discord",
+                )
+            _persist_session(session)
+            await renderer.finish()
 
         except Exception as exc:
             await renderer.finish()
             await message.channel.send(f"Error: {exc}")
             # Remove the failed user message to keep history clean
-            if (
-                summary_count is None
-                and session.messages
-                and session.messages[-1].get("role") == "user"
-            ):
+            if session.messages and session.messages[-1].get("role") == "user":
                 session.messages.pop()
         finally:
             print(
                 f"[DEBUG] Total Discord request time: "
                 f"{time.perf_counter() - started_at:.2f}s"
             )
-
-    await bot.process_commands(message)
 
 
 def main():

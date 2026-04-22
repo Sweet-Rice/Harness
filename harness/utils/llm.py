@@ -4,10 +4,10 @@ from harness.utils.loop.runner import run_conversation
 from harness.utils.orchestration.policy import build_policy
 
 
-async def loop(client, messages, on_event=None, *, mode="orchestrated"):
+async def loop(client, messages, on_event=None, *, mode="orchestrated", client_type="web"):
     state = ConversationState.from_messages(messages)
     registry = get_default_registry()
-    policy = build_policy(mode)
+    policy = build_policy(mode, client_type=client_type)
     result = await run_conversation(
         client,
         state,
